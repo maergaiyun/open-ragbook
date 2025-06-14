@@ -1,0 +1,44 @@
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  font-family: Arial, sans-serif;
+  background-color: #ffffff;
+}
+
+/* 设置滚动条宽度和背景颜色 */
+/* ::-webkit-scrollbar {
+  width: 6px !important;
+  background-color: #f9f9f9 !important;
+} */
+
+/* 滚动条滑块样式 */
+/* ::-webkit-scrollbar-thumb {
+  border-radius: 2px !important;
+  background-color: #c1c1c1 !important;
+} */
+
+/* 滚动条轨道样式 */
+/* ::-webkit-scrollbar-track {
+  border-radius: 2px !important;
+  box-shadow: inset 0 0 2px rgb(220, 220, 220) !important;
+} */
+
+.el-button--primary {
+  color: #fff;
+  background-color: #0052cc !important;
+}
+
+.el-table th.el-table__cell {
+  color: #5e6c84 !important;
+  background-color: #ebecf0 !important;
+  font-weight: 500 !important;
+  border-right: 1px solid #dfe1e6;
+}

@@ -1,0 +1,1 @@
+【ERROR】 2025-06-12 00:02:07 [22024:15076] embedding_views.embedding_load_local:627: 加载本地嵌入模型失败: name 'get_embedding_model_by_id' is not defined

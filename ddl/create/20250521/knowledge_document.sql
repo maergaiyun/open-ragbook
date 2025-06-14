@@ -1,0 +1,21 @@
+CREATE TABLE `knowledge_document` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `database_id` int NOT NULL COMMENT '所属知识库ID',
+  `filename` varchar(255) NOT NULL COMMENT '文件名称',
+  `file_path` varchar(500) NOT NULL COMMENT '文件存储路径',
+  `file_type` varchar(50) NOT NULL COMMENT '文件类型',
+  `file_size` bigint NOT NULL COMMENT '文件大小(字节)',
+  `chunking_method` varchar(50) NOT NULL COMMENT '分块方法',
+  `chunk_size` int NOT NULL COMMENT '分块大小',
+  `similarity_threshold` decimal(3,2) DEFAULT '0.70' COMMENT '语义分块相似度阈值',
+  `overlap_size` int DEFAULT '100' COMMENT '递归分块重叠大小',
+  `chunk_count` int NOT NULL COMMENT '分块数量',
+  `user_id` int NOT NULL COMMENT '上传用户ID',
+  `username` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL COMMENT '上传用户名',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_database_id` (`database_id`),
+  KEY `idx_user_id` (`user_id`),
+  CONSTRAINT `fk_document_database` FOREIGN KEY (`database_id`) REFERENCES `knowledge_database` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=17 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='知识文档表';
