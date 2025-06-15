@@ -150,14 +150,14 @@ def _update_knowledge_database(request, db_id):
         request_data = parse_json_body(request)
         
         # 验证必填字段
-        required_fields = ['name', 'description']
+        required_fields = ['name']
         is_valid, missing_fields = validate_required_fields(request_data, required_fields)
         if not is_valid:
             logger.warning(f"更新知识库失败: ID={db_id}, 缺少必填字段")
             return create_error_response(f"缺少必填字段: {', '.join(missing_fields)}")
         
         name = request_data.get('name')
-        description = request_data.get('description')
+        description = request_data.get('description', '')
         
         # 获取记录并检查权限
         record = get_record_by_id('knowledge_database', db_id)

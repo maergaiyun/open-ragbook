@@ -91,16 +91,16 @@ def retrieve_and_chat(request):
         # 获取模型信息（检查用户权限）
         model_sql = """
             SELECT m.id, m.name, m.provider_id, m.model_type, m.api_key, m.base_url, 
-                   p.name as provider_name 
+                   m.is_public, m.created_by, p.name as provider_name 
             FROM llmmodel m 
             JOIN llmprovider p ON m.provider_id = p.id 
             WHERE m.id = %s
         """
         model_params = [model_id]
         
-        # 普通用户只能使用自己的模型
+        # 普通用户只能使用公共模型和自己创建的模型
         if role_id != 1:
-            model_sql += " AND m.user_id = %s"
+            model_sql += " AND (m.is_public = 1 OR m.created_by = %s)"
             model_params.append(user_id)
         
         model_result = execute_query_with_params(model_sql, model_params)
@@ -195,19 +195,30 @@ def retrieve_and_chat(request):
                 # 构建IN查询的占位符
                 placeholders = ','.join(['%s'] * len(chunk_ids))
                 chunk_sql = f"""
-                    SELECT dc.id, dc.content, dc.metadata, d.filename, d.file_path
-                    FROM document_chunk dc
-                    JOIN document d ON dc.document_id = d.id
-                    WHERE dc.id IN ({placeholders}) AND d.knowledge_database_id = %s
+                    SELECT dc.id, dc.content, d.filename, d.file_path
+                    FROM knowledge_document_chunk dc
+                    JOIN knowledge_document d ON dc.document_id = d.id
+                    WHERE dc.id IN ({placeholders}) AND d.database_id = %s
                 """
                 chunk_params = chunk_ids + [knowledge_id]
                 
-                # 普通用户只能访问自己的文档
+                # 权限检查：管理员可以访问所有文档，普通用户只能访问自己知识库中的文档
                 if role_id != 1:
-                    chunk_sql += " AND d.user_id = %s"
-                    chunk_params.append(user_id)
+                    # 普通用户需要检查知识库所有权，而不是文档所有权
+                    # 如果用户有权限访问知识库，就可以访问其中的所有文档
+                    kb_owner_sql = "SELECT user_id FROM knowledge_database WHERE id = %s"
+                    kb_owner_result = execute_query_with_params(kb_owner_sql, [knowledge_id])
+                    if kb_owner_result and kb_owner_result[0]['user_id'] != user_id:
+                        # 用户不是知识库所有者，无权访问
+                        logger.warning(f"用户 {user_id} 无权访问知识库 {knowledge_id} 中的文档")
+                        return create_error_response('无权限访问该知识库中的文档', 403)
                 
                 chunk_results = execute_query_with_params(chunk_sql, chunk_params)
+                
+                # 检查查询结果
+                if not chunk_results:
+                    logger.warning(f"未能查询到文档分块内容，chunk_ids: {chunk_ids}")
+                    return create_error_response('未能获取文档内容，请检查数据完整性', 500)
                 
                 # 构建上下文
                 context_parts = []
@@ -217,6 +228,10 @@ def retrieve_and_chat(request):
                     context_parts.append(f"来源：{filename}\n内容：{content}")
 
                 context = "\n\n".join(context_parts)
+                
+                if not context.strip():
+                    logger.warning("构建的上下文为空")
+                    return create_error_response('检索到的文档内容为空', 500)
 
                 # 7. 构建提示词
                 system_prompt = f"""你是一个基于知识库的智能助手。请根据以下知识库内容回答用户的问题。
@@ -263,11 +278,28 @@ def retrieve_and_chat(request):
                             conv_title = query[:50] + "..." if len(query) > 50 else query
                             conv_sql = """
                                 INSERT INTO chat_conversation 
-                                (title, knowledge_base_id, model_id, user_id, create_time, update_time)
-                                VALUES (%s, %s, %s, %s, NOW(), NOW())
+                                (title, knowledge_base_id, knowledge_base_name, model_id, model_name, user_id, username, create_time, update_time)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                             """
-                            execute_update_with_params(conv_sql, [conv_title, knowledge_id, model_id, user_id])
+                            username = user_info.get('user_name', '')
+                            affected_rows = execute_update_with_params(conv_sql, [conv_title, knowledge_id, knowledge_name, model_id, model_name, user_id, username])
+                            if affected_rows <= 0:
+                                logger.error("创建会话失败")
+                                return create_error_response("创建会话失败", 500)
+                            
                             conversation_id = get_last_insert_id()
+                            logger.info(f"创建新会话，ID: {conversation_id}")
+                            
+                            if not conversation_id:
+                                logger.error("获取会话ID失败")
+                                return create_error_response("获取会话ID失败", 500)
+
+                        # 验证会话是否存在
+                        conv_check_sql = "SELECT id FROM chat_conversation WHERE id = %s AND user_id = %s"
+                        conv_check_result = execute_query_with_params(conv_check_sql, [conversation_id, user_id])
+                        if not conv_check_result:
+                            logger.error(f"会话ID {conversation_id} 不存在或无权限访问")
+                            return create_error_response("会话不存在或无权限访问", 404)
 
                         # 保存用户消息
                         user_msg_sql = """
@@ -275,7 +307,10 @@ def retrieve_and_chat(request):
                             (conversation_id, role, content, user_id, create_time)
                             VALUES (%s, %s, %s, %s, NOW())
                         """
-                        execute_update_with_params(user_msg_sql, [conversation_id, 'user', query, user_id])
+                        user_affected = execute_update_with_params(user_msg_sql, [conversation_id, 'user', query, user_id])
+                        if user_affected <= 0:
+                            logger.error(f"保存用户消息失败, conversation_id: {conversation_id}")
+                            return create_error_response("保存用户消息失败", 500)
 
                         # 保存助手回复
                         assistant_msg_sql = """
@@ -283,17 +318,35 @@ def retrieve_and_chat(request):
                             (conversation_id, role, content, user_id, create_time)
                             VALUES (%s, %s, %s, %s, NOW())
                         """
-                        execute_update_with_params(assistant_msg_sql, [conversation_id, 'assistant', assistant_response, user_id])
+                        assistant_affected = execute_update_with_params(assistant_msg_sql, [conversation_id, 'assistant', assistant_response, user_id])
+                        if assistant_affected <= 0:
+                            logger.error(f"保存助手消息失败, conversation_id: {conversation_id}")
+                            return create_error_response("保存助手消息失败", 500)
 
                         # 更新会话的最后更新时间
                         update_conv_sql = "UPDATE chat_conversation SET update_time = NOW() WHERE id = %s"
                         execute_update_with_params(update_conv_sql, [conversation_id])
 
-                    # 11. 返回结果
+                    # 11. 构建检索到的文档信息
+                    retrieved_docs = []
+                    for chunk in similar_chunks:
+                        chunk_id = chunk['chunk_id']
+                        # 查找对应的文档内容
+                        for chunk_data in chunk_results:
+                            if chunk_data['id'] == chunk_id:
+                                retrieved_docs.append({
+                                    'content': chunk_data['content'],
+                                    'source': chunk_data['file_path'] or chunk_data['filename'],
+                                    'title': chunk_data['filename'],
+                                    'similarity_score': 1.0 / (1.0 + chunk['distance']) if chunk['distance'] >= 0 else 0.0
+                                })
+                                break
+
+                    # 12. 返回结果
                     return create_success_response({
-                        'response': assistant_response,
+                        'answer': assistant_response,
                         'conversation_id': conversation_id,
-                        'retrieved_chunks': len(similar_chunks),
+                        'retrieved_docs': retrieved_docs,
                         'knowledge_base': knowledge_name,
                         'model': model_name,
                         'provider': provider_name

@@ -8,6 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from open_ragbook_server.utils.response_code import *
 from open_ragbook_server.utils.db_utils import fetch_paginated_data, dict_fetchall
+from open_ragbook_server.utils.auth_utils import jwt_required
 from knowledge_mgt.utils.document_processor import DocumentProcessor, VectorStore
 from knowledge_mgt.utils.embeddings import EmbeddingModel
 
@@ -142,6 +143,7 @@ def document_chunks(request, doc_id):
 
 @require_http_methods(["POST"])
 @csrf_exempt
+@jwt_required()
 def document_upload(request):
     """上传并处理文档"""
     try:
@@ -185,8 +187,10 @@ def document_upload(request):
             )
 
         # 获取用户信息
-        user_id = request.user.id if hasattr(request, 'user') and hasattr(request.user, 'id') else None
-        username = request.user.username if hasattr(request, 'user') and hasattr(request.user, 'username') else None
+        from open_ragbook_server.utils.auth_utils import get_user_from_request
+        user_info = get_user_from_request(request)
+        user_id = user_info.get('user_id')
+        username = user_info.get('user_name')
 
         if not user_id or not username:
             logger.warning(f"无法获取用户信息: user_id={user_id}, username={username}")

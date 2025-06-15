@@ -1,8 +1,10 @@
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import axios from '@/axios/index.js'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { UploadFilled, View, Document, List, Clock, Loading, Check, Close } from '@element-plus/icons-vue'
+import Cookies from 'js-cookie'
 
 // 加载状态
 const loading = ref(false)
@@ -309,8 +311,9 @@ const handleUpload = async () => {
       // 开始监控任务状态
       startTaskMonitoring(response.data.task_id)
 
-      // 刷新队列状态
+      // 刷新队列状态并启动轮询
       await fetchQueueStatus()
+      startQueuePolling()
 
     } catch (error) {
       console.error('文档上传失败:', error)
@@ -413,7 +416,12 @@ const fetchQueueStatus = async () => {
     queueStats.value = response.data.queue_stats
     currentTask.value = response.data.current_task
   } catch (error) {
-    console.error('获取队列状态失败:', error)
+    // 401错误由axios拦截器处理，这里只记录其他错误
+    if (error.response?.status !== 401) {
+      console.error('获取队列状态失败:', error)
+    }
+    // 重新抛出错误，让调用者处理
+    throw error
   }
 }
 
@@ -429,6 +437,13 @@ const fetchUploadTasks = async () => {
 const startTaskMonitoring = (taskId) => {
   const checkTaskStatus = async () => {
     try {
+      // 检查token是否还存在
+      const token = Cookies.get('token')
+      if (!token) {
+        console.log(`Token不存在，停止任务${taskId}监控`)
+        return
+      }
+      
       const response = await axios.get(`knowledge/upload/task/${taskId}/status`)
       const task = response.data.task
       
@@ -452,6 +467,11 @@ const startTaskMonitoring = (taskId) => {
         setTimeout(checkTaskStatus, 2000)
       }
     } catch (error) {
+      // 401错误说明认证失败，停止监控
+      if (error.response?.status === 401) {
+        console.log(`认证失败，停止任务${taskId}监控`)
+        return
+      }
       console.error('检查任务状态失败:', error)
     }
   }
@@ -486,12 +506,89 @@ const getStatusText = (status) => {
   }
 }
 
+// 队列状态轮询控制
+let queuePollingInterval = null
+const router = useRouter()
+
+const startQueuePolling = () => {
+  if (queuePollingInterval) return
+  
+  queuePollingInterval = setInterval(async () => {
+    // 检查token是否还存在，如果不存在则停止轮询
+    const token = Cookies.get('token')
+    if (!token) {
+      console.log('Token不存在，停止队列轮询')
+      stopQueuePolling()
+      return
+    }
+    
+    try {
+      await fetchQueueStatus()
+      
+      // 如果没有待处理或正在处理的任务，停止轮询
+      if (queueStats.value.pending === 0 && queueStats.value.processing === 0) {
+        stopQueuePolling()
+      }
+    } catch (error) {
+      // 如果请求失败（比如401），停止轮询
+      if (error.response?.status === 401) {
+        console.log('认证失败，停止队列轮询')
+        stopQueuePolling()
+      }
+    }
+  }, 10000) // 改为10秒轮询一次
+}
+
+const stopQueuePolling = () => {
+  if (queuePollingInterval) {
+    clearInterval(queuePollingInterval)
+    queuePollingInterval = null
+    console.log('队列轮询已停止')
+  }
+}
+
+// 监听路由变化，如果跳转到登录页则停止轮询
+watch(() => router.currentRoute.value.name, (newRouteName) => {
+  if (newRouteName === 'Login') {
+    console.log('跳转到登录页，停止队列轮询')
+    stopQueuePolling()
+  }
+})
+
+// 监听token变化
+watch(() => Cookies.get('token'), (newToken) => {
+  if (!newToken) {
+    console.log('Token被清除，停止队列轮询')
+    stopQueuePolling()
+  }
+})
+
 onMounted(async () => {
+  // 注册全局清理函数
+  if (window.globalPollingCleanup) {
+    window.globalPollingCleanup.push(stopQueuePolling)
+  }
+  
   await fetchDatabaseList()
   await fetchQueueStatus()
   
-  // 定期刷新队列状态
-  setInterval(fetchQueueStatus, 5000)
+  // 只有当有任务时才开始轮询
+  if (queueStats.value.pending > 0 || queueStats.value.processing > 0) {
+    startQueuePolling()
+  }
+})
+
+// 组件卸载时清理定时器
+onUnmounted(() => {
+  stopQueuePolling()
+  
+  // 从全局清理器中移除
+  if (window.globalPollingCleanup) {
+    const index = window.globalPollingCleanup.indexOf(stopQueuePolling)
+    if (index > -1) {
+      window.globalPollingCleanup.splice(index, 1)
+    }
+  }
 })
 </script>
 
