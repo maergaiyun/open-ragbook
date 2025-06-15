@@ -138,7 +138,7 @@ const fetchModelsAndProviders = async () => {
             : (Array.isArray(providerResponse.data) ? providerResponse.data : []);
         providers.value = providerData;
 
-        // 获取用户自己创建的模型
+        // 获取所有可用的模型（包括公共模型和用户自己的模型）
         const modelResponse = await axios.get('/system/llm/models')
         console.log('Model response:', modelResponse);
 
@@ -146,14 +146,29 @@ const fetchModelsAndProviders = async () => {
         const modelData = modelResponse.data && modelResponse.data.data
             ? modelResponse.data.data
             : (Array.isArray(modelResponse.data) ? modelResponse.data : []);
-        models.value = modelData;
+        
+        // 对模型进行排序：公共模型在前，默认模型优先，然后按创建时间排序
+        models.value = modelData.sort((a, b) => {
+            // 首先按是否为公共模型排序（公共模型在前）
+            if (a.is_public !== b.is_public) {
+                return b.is_public - a.is_public;
+            }
+            // 然后按是否为默认模型排序（默认模型在前）
+            if (a.is_default !== b.is_default) {
+                return b.is_default - a.is_default;
+            }
+            // 最后按创建时间排序（新的在前）
+            return new Date(b.create_time || b.created_at) - new Date(a.create_time || a.created_at);
+        });
 
-        // 找到默认模型或第一个模型
+        // 找到默认模型或第一个模型（优先选择公共默认模型）
         const defaultModel = models.value.find(m => m.is_default)
         if (defaultModel) {
             selectedModel.value = defaultModel
         } else if (models.value.length > 0) {
-            selectedModel.value = models.value[0]
+            // 如果没有默认模型，优先选择公共模型
+            const publicModel = models.value.find(m => m.is_public)
+            selectedModel.value = publicModel || models.value[0]
         }
 
         // 恢复上次选择的模型
@@ -469,7 +484,8 @@ onMounted(() => {
                     </div>
                     <div v-else-if="models.length === 0" class="empty-state">
                         <div class="empty-icon">🤖</div>
-                        <div class="empty-text">暂无模型</div>
+                        <div class="empty-text">暂无可用模型</div>
+                        <div class="empty-hint">请在系统管理中配置模型或使用公共模型</div>
                     </div>
                     <div v-else v-for="model in models" :key="model.id" class="model-item"
                         :class="{ active: selectedModel?.id === model.id }" @click="selectModel(model)">
@@ -482,7 +498,11 @@ onMounted(() => {
                                 {{providers.find(p => p.id === model.provider_id).name}}
                             </div>
                         </div>
-                        <el-tag v-if="model.is_default" type="success" size="small">默认</el-tag>
+                        <div class="model-tags">
+                            <el-tag v-if="model.is_default" type="success" size="small">默认</el-tag>
+                            <el-tag v-if="model.is_public" type="primary" size="small">公共</el-tag>
+                            <el-tag v-else type="info" size="small">私有</el-tag>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -509,6 +529,8 @@ onMounted(() => {
                     <div class="model-info" v-if="selectedModel">
                         使用模型: {{ selectedModel.name }}
                         <el-tag size="small" v-if="currentProvider">{{ currentProvider.name }}</el-tag>
+                        <el-tag v-if="selectedModel.is_public" size="small" type="primary">公共模型</el-tag>
+                        <el-tag v-else size="small" type="info">私有模型</el-tag>
                     </div>
                     <div class="retrieval-info">
                         <el-tag size="small" type="info">Top-K: {{ retrievalSettings.retrieve_count }}</el-tag>
@@ -837,6 +859,7 @@ onMounted(() => {
     cursor: pointer;
     transition: all 0.3s;
     border: 1px solid #eaeaea;
+    position: relative;
 }
 
 .knowledge-base-item:hover,
@@ -867,6 +890,14 @@ onMounted(() => {
     font-size: 12px;
     color: #888;
     margin-top: 2px;
+}
+
+.model-tags {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-left: auto;
+    align-items: flex-end;
 }
 
 .chat-container {
@@ -1373,6 +1404,13 @@ onMounted(() => {
     font-size: 14px;
     font-weight: 500;
     color: #606266;
+}
+
+.empty-hint {
+    font-size: 12px;
+    color: #909399;
+    margin-top: 4px;
+    text-align: center;
 }
 
 .chat-empty-state {
