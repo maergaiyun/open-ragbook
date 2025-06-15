@@ -1636,4 +1636,17 @@ onMounted(() => {
   font-size: 12px;
   flex-shrink: 0;
 }
+
+/* 测试结果对话框样式 */
+:deep(.el-descriptions .el-descriptions__label) {
+  width: 120px !important;
+  min-width: 120px !important;
+  font-weight: 600 !important;
+  color: #303133 !important;
+}
+
+:deep(.el-descriptions .el-descriptions__content) {
+  width: auto !important;
+  color: #606266 !important;
+}
 </style>
