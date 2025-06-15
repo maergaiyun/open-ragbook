@@ -175,7 +175,8 @@ if torch.cuda.is_available():
 
 ### Environment Configuration
 
-4. **Configure Environment**
+1. **Configure Environment**
+
 ```bash
 # Copy configuration file
 cp .env.dev .env
@@ -185,13 +186,7 @@ cp .env.dev .env
 # - API key configuration
 ```
 
-5. **Initialize Database**
-```bash
-python manage.py migrate
-python manage.py createsuperuser
-```
-
-6. **Start Services**
+2. **Start Services**
 
 Frontend development server:
 ```bash
@@ -323,7 +318,7 @@ For technical support or business cooperation, you can directly contact the auth
 
 ## Changelog
 
-### v0.0.1-beta (2024-12-19)
+### v0.0.1-beta (2025-05-30)
 - Initial version release
 - Implemented basic RAG Q&A functionality
 - Support for multiple large language model integration

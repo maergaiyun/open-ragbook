@@ -3,6 +3,7 @@ from knowledge_mgt.api.knowledge_views import knowledge_database_list, create_kn
     update_knowledge_database, check_knowledge_database_name
 
 from knowledge_mgt.api.document_views import document_list, document_upload, document_delete, document_chunks
+from knowledge_mgt.api.recall_views import recall_test
 
 urlpatterns = [
     # 知识库API
@@ -16,4 +17,7 @@ urlpatterns = [
     path('document/upload', document_upload, name='document_upload'),
     path('document/<int:doc_id>', document_delete, name='document_delete'),
     path('document/<int:doc_id>/chunks', document_chunks, name='document_chunks'),
+    
+    # 召回检索测试
+    path('recall/test', recall_test, name='recall_test'),
 ]

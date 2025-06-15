@@ -175,7 +175,8 @@ if torch.cuda.is_available():
 
 ### 配置环境
 
-4. **配置环境**
+1. **配置环境**
+
 ```bash
 # 复制配置文件
 cp .env.dev .env
@@ -185,13 +186,7 @@ cp .env.dev .env
 # - API密钥配置
 ```
 
-5. **初始化数据库**
-```bash
-python manage.py migrate
-python manage.py createsuperuser
-```
-
-6. **启动服务**
+2. **启动服务**
 
 前端开发服务器:
 ```bash
@@ -323,7 +318,7 @@ docker run -d -p 8000:8000 open-ragbook
 
 ## 更新日志
 
-### v0.0.1-beta (2024-12-19)
+### v0.0.1-beta (2025-05-30)
 - 初始版本发布
 - 实现基础的RAG问答功能
 - 支持多种大语言模型集成
