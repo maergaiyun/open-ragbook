@@ -1,12 +1,18 @@
 # Open RAGBook
 
-English | [Chinese](README_CN.md)
+English | [Chinese](README.md)
 
 An intelligent knowledge management system based on RAG (Retrieval-Augmented Generation) technology, supporting integration and management of multiple large language models and embedding models.
 
 ## Version Information
 
-**Current Version**: v0.0.1-beta
+**Current Version**: v0.0.1
+
+## Online Demo
+
+**Demo URL**: [http://115.120.244.180:8080/](http://115.120.244.180:8080/)
+
+*Demo environment is for experience only, please do not upload sensitive information*
 
 ## Project Introduction
 
@@ -317,6 +323,27 @@ For technical support or business cooperation, you can directly contact the auth
 *Please note: Open RAGBook when adding*
 
 ## Changelog
+
+### v0.0.1 (2025-06-15)
+- **Official Release**
+- **New Features**:
+  - Recall retrieval testing: Support vector retrieval quality testing and parameter tuning
+  - Document upload queue system: Support batch document upload and progress monitoring
+  - Professional chunking methods: Added chapter chunking, semantic chunking, sliding window chunking and other strategies
+  - Custom delimiter chunking: Support user-defined delimiters for document chunking
+- **Optimizations**:
+  - Refactored API code, reduced duplicate code by 60%+
+  - Optimized document chunking algorithms, improved chunking quality
+  - Enhanced user interface, improved user experience
+  - Optimized error handling and user prompts
+- **Bug Fixes**:
+  - Fixed knowledge base name uniqueness check issue
+  - Fixed user information retrieval issue during document upload
+  - Fixed frontend error message display issue
+- **Documentation Updates**:
+  - Improved installation documentation and troubleshooting guide
+  - Optimized dependency installation process
+  - Added online demo address
 
 ### v0.0.1-beta (2025-05-30)
 - Initial version release
