@@ -23,7 +23,7 @@ open_ragbook_server/data/
 # Node/Vue (open_ragbook_ui)
 open_ragbook_ui/node_modules/
 open_ragbook_ui/dist/
-open_ragbook_ui/.env*
+open_ragbook_ui/.env
 open_ragbook_ui/.local
 open_ragbook_ui/npm-debug.log*
 open_ragbook_ui/yarn-debug.log*

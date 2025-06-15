@@ -17,5 +17,5 @@ def decrypt_pwd_with_fixed_salt(new_pwd, old_pwd):
 
 
 if __name__ == '__main__':
-    # print(encrypt_pwd_with_fixed_salt("admin"))
-    print(decrypt_pwd_with_fixed_salt("admin", "$2b$12$ZAfqXbGX0lLf6Xkvb92PiOzQqhfMfwcOreX24Z1BzujvsifRsWwFO"))
+    print(encrypt_pwd_with_fixed_salt("Tanhang2008@"))
+    # print(decrypt_pwd_with_fixed_salt("admin", "$2b$12$ZAfqXbGX0lLf6Xkvb92PiOzQqhfMfwcOreX24Z1BzujvsifRsWwFO"))

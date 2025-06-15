@@ -11,9 +11,8 @@ CREATE TABLE `knowledge_database` (
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_name` (`name`),
   UNIQUE KEY `uk_user_name` (`user_id`,`name`),
   KEY `idx_creator` (`user_id`),
   KEY `idx_embedding_model_id` (`embedding_model_id`),
   CONSTRAINT `fk_knowledge_database_embedding_model` FOREIGN KEY (`embedding_model_id`) REFERENCES `embedding_model` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='知识库表';
+) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='知识库表';

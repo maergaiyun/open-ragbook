@@ -10,6 +10,14 @@ const loading = ref(false)
 const providers = ref([])
 // 当前选中的服务商
 const currentProvider = ref(null)
+// 分页相关
+const pagination = reactive({
+  currentPage: 1,
+  pageSize: 4, // 每页显示4个服务商（2行，每行2个）
+  total: 0
+})
+// 当前页显示的服务商
+const currentPageProviders = ref([])
 // 模型配置分组
 const modelsByProvider = ref({})
 // 当前选中的模型配置
@@ -97,6 +105,10 @@ const fetchProvidersAndModels = async () => {
 
     // 处理后端统一响应格式
     providers.value = Array.isArray(providerRes.data) ? providerRes.data : []
+    
+    // 更新分页信息
+    pagination.total = providers.value.length
+    updateCurrentPageProviders()
 
     // 获取所有模型配置
     const modelRes = await axios.get('/system/llm/models')
@@ -149,7 +161,7 @@ const submitProvider = async () => {
       ElMessage.success('服务商添加成功')
     }
     providerDialogVisible.value = false
-    fetchProvidersAndModels()
+    await fetchProvidersAndModels()
   } catch (e) {
     ElMessage.error('操作失败')
     console.error(e)
@@ -168,7 +180,7 @@ const deleteProvider = (provider) => {
     try {
       await axios.delete(`/system/llm/providers/${provider.id}`)
       ElMessage.success('服务商删除成功')
-      fetchProvidersAndModels()
+      await fetchProvidersAndModels()
     } catch (e) {
       ElMessage.error('删除失败')
       console.error(e)
@@ -279,6 +291,26 @@ const chunkArray = (array, size) => {
   return result
 }
 
+// 更新当前页显示的服务商
+const updateCurrentPageProviders = () => {
+  const start = (pagination.currentPage - 1) * pagination.pageSize
+  const end = start + pagination.pageSize
+  currentPageProviders.value = providers.value.slice(start, end)
+}
+
+// 分页改变处理
+const handlePageChange = (page) => {
+  pagination.currentPage = page
+  updateCurrentPageProviders()
+}
+
+// 每页大小改变处理
+const handleSizeChange = (size) => {
+  pagination.pageSize = size
+  pagination.currentPage = 1
+  updateCurrentPageProviders()
+}
+
 const testModelConnection = async () => {
   if (!currentModel.value) return
 
@@ -366,9 +398,10 @@ onMounted(() => {
     </div>
 
     <div class="content-container">
-
-      <el-row :gutter="24" class="provider-group-row">
-        <el-col v-for="provider in providers" :key="provider.id" :span="12" class="provider-group-col">
+      <!-- 服务商列表容器 -->
+      <div class="providers-container">
+        <el-row :gutter="24" class="provider-group-row">
+          <el-col v-for="provider in currentPageProviders" :key="provider.id" :span="12" class="provider-group-col">
           <el-card shadow="hover" class="provider-card">
             <div class="provider-card-header">
               <div class="provider-info">
@@ -428,6 +461,21 @@ onMounted(() => {
           </el-card>
         </el-col>
       </el-row>
+      
+      <!-- 分页组件 -->
+      <div class="pagination-container" v-if="pagination.total > pagination.pageSize">
+        <el-pagination
+          v-model:current-page="pagination.currentPage"
+          v-model:page-size="pagination.pageSize"
+          :page-sizes="[2, 4, 6, 8]"
+          :total="pagination.total"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange"
+          @current-change="handlePageChange"
+          background
+        />
+      </div>
+    </div>
 
       <!-- 服务商弹窗 -->
       <el-dialog v-model="providerDialogVisible" :title="providerDialogTitle" width="580px" destroy-on-close>
@@ -568,6 +616,82 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.providers-container {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden; /* 隐藏横向滚动条 */
+  padding: 0 12px; /* 添加左右对称的padding */
+  scrollbar-width: thin;
+  scrollbar-color: #c1c1c1 #f1f1f1;
+}
+
+.providers-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.providers-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.providers-container::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 10px;
+}
+
+.providers-container::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+.pagination-container {
+  display: flex;
+  justify-content: flex-end; /* 改为右对齐 */
+  padding: 0 0 5px 0;
+}
+
+/* 分页组件样式优化 */
+:deep(.el-pagination) {
+  --el-pagination-font-size: 14px;
+  --el-pagination-bg-color: #f5f7fa;
+  --el-pagination-text-color: #606266;
+  --el-pagination-border-radius: 6px;
+}
+
+:deep(.el-pagination .btn-next),
+:deep(.el-pagination .btn-prev) {
+  background: #f5f7fa;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  transition: all 0.3s;
+}
+
+:deep(.el-pagination .btn-next:hover),
+:deep(.el-pagination .btn-prev:hover) {
+  background: #409eff;
+  color: #fff;
+  border-color: #409eff;
+}
+
+:deep(.el-pagination .el-pager li) {
+  background: #f5f7fa;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  margin: 0 4px;
+  transition: all 0.3s;
+}
+
+:deep(.el-pagination .el-pager li:hover) {
+  background: #409eff;
+  color: #fff;
+  border-color: #409eff;
+}
+
+:deep(.el-pagination .el-pager li.is-active) {
+  background: #409eff;
+  color: #fff;
+  border-color: #409eff;
 }
 
 .header-button {

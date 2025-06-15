@@ -27,10 +27,6 @@ load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(os.path.join(os.path.dirname(__file__), 'account_mgt'))
-# sys.path.append(os.path.join(os.path.dirname(__file__), 'hr_management'))
-# sys.path.append(os.path.join(os.path.dirname(__file__), 'project_management'))
-# sys.path.append(os.path.join(os.path.dirname(__file__), 'fin_management'))
-# sys.path.append(os.path.join(os.path.dirname(__file__), 'system_management'))
 
 # 媒体文件配置
 MEDIA_URL = '/media/'
@@ -177,7 +173,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field

@@ -109,6 +109,8 @@ const goToRegister = () => {
   flex-direction: column;
   justify-content: center;
   /* 垂直居中内容 */
+  position: relative;
+  z-index: 10;
 }
 
 .login-title {
@@ -138,6 +140,7 @@ const goToRegister = () => {
 .corner-image {
   position: absolute;
   width: 420px;
+  z-index: 1;
 }
 
 .left-corner {

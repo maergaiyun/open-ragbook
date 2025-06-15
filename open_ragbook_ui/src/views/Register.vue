@@ -206,6 +206,8 @@ const goToLogin = () => {
     display: flex;
     flex-direction: column;
     justify-content: center;
+    position: relative;
+    z-index: 10;
 }
 
 .register-title {
@@ -233,6 +235,7 @@ const goToLogin = () => {
 .corner-image {
     position: absolute;
     width: 420px;
+    z-index: 1;
 }
 
 .left-corner {

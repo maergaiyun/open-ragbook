@@ -30,8 +30,46 @@ const formData = reactive({
   description: "",
 });
 
+// 自定义验证：检查知识库名称在当前用户下的唯一性
+const validateKnowledgeName = async (rule, value, callback) => {
+  if (!value || value.trim() === '') {
+    callback(new Error('请输入知识库名称'));
+    return;
+  }
+  
+  // 编辑模式下，如果名称没有改变，则不需要验证
+  if (isEdit.value && tableData.data.find(item => item.id === formData.id)?.name === value) {
+    callback();
+    return;
+  }
+  
+  try {
+    // 检查当前用户是否已有同名知识库
+    const response = await axios.get('knowledge/database/check-name', {
+      params: { name: value.trim() }
+    });
+    
+    if (response.code === 200) {
+      if (response.data.exists) {
+        callback(new Error('您已有同名的知识库，请使用其他名称'));
+      } else {
+        callback();
+      }
+    } else {
+      callback();
+    }
+  } catch (error) {
+    // 如果检查接口出错，允许通过验证，由后端最终处理
+    console.warn('检查知识库名称唯一性失败:', error);
+    callback();
+  }
+};
+
 const formRules = {
-  name: [{ required: true, message: "请输入知识库名称", trigger: "blur" }],
+  name: [
+    { required: true, message: "请输入知识库名称", trigger: "blur" },
+    { validator: validateKnowledgeName, trigger: "blur" }
+  ],
   embedding_model_id: [{ required: true, message: "请选择嵌入模型", trigger: "change" }],
   index_type: [{ required: true, message: "请选择索引类型", trigger: "change" }],
 };
@@ -334,6 +372,10 @@ onMounted(async () => {
       <el-form ref="formRef" :model="formData" :rules="formRules" label-width="100px">
         <el-form-item label="知识库名称" prop="name">
           <el-input v-model="formData.name" placeholder="请输入知识库名称"></el-input>
+          <div class="name-tip">
+            <el-icon><InfoFilled /></el-icon>
+            <span>知识库名称在您的账户下需要唯一，其他用户可以创建同名知识库</span>
+          </div>
         </el-form-item>
         <el-form-item label="嵌入模型" prop="embedding_model_id">
           <template v-if="isEdit">
@@ -821,5 +863,20 @@ onMounted(async () => {
 
 .warning-suggestion .el-icon {
   margin-right: 6px;
+}
+
+.name-tip {
+  display: flex;
+  align-items: center;
+  margin-top: 6px;
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.name-tip .el-icon {
+  margin-right: 6px;
+  color: #909399;
+  font-size: 14px;
 }
 </style>

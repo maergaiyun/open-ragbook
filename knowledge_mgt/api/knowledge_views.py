@@ -325,3 +325,55 @@ def update_knowledge_database(request, db_id):
             ResponseCode.ERROR.to_dict(message=str(e)),
             status=500
         )
+
+
+@require_http_methods(["GET"])
+@csrf_exempt
+def check_knowledge_database_name(request):
+    """检查知识库名称在当前用户下是否已存在"""
+    logger.info("检查知识库名称唯一性")
+
+    # JWT token验证
+    token = request.META.get('HTTP_AUTHORIZATION', '').replace('Bearer ', '')
+    if not token:
+        return JsonResponse(
+            ResponseCode.ERROR.to_dict(message="未授权访问"),
+            status=401
+        )
+
+    try:
+        user_info = parse_jwt_token(token)
+        if not user_info:
+            return JsonResponse(
+                ResponseCode.ERROR.to_dict(message="token无效"),
+                status=401
+            )
+
+        user_id = user_info.get('user_id')
+        name = request.GET.get('name', '').strip()
+
+        if not name:
+            return JsonResponse(
+                ResponseCode.ERROR.to_dict(message="知识库名称不能为空"),
+                status=400
+            )
+
+        with connection.cursor() as cursor:
+            # 检查当前用户是否已有同名知识库
+            cursor.execute(
+                "SELECT id FROM knowledge_database WHERE name = %s AND user_id = %s", 
+                [name, user_id]
+            )
+            exists = cursor.fetchone() is not None
+
+            logger.info(f"检查知识库名称'{name}'，用户ID={user_id}，是否存在={exists}")
+            return JsonResponse(
+                ResponseCode.SUCCESS.to_dict(data={"exists": exists}),
+                status=200
+            )
+    except Exception as e:
+        logger.error(f"检查知识库名称异常: {str(e)}", exc_info=True)
+        return JsonResponse(
+            ResponseCode.ERROR.to_dict(message=str(e)),
+            status=500
+        )
