@@ -51,11 +51,14 @@ instance.interceptors.response.use(
         case 404: // 资源不存在
           ElMessage.error("请求的资源不存在");
           break;
-        case 500: // 服务器错误
-          ElMessage.error("服务器错误，请稍后再试");
+        case 500: { // 服务器错误
+          // 尝试获取后端返回的具体错误信息
+          const errorMessage = error.response.data?.message || "服务器错误，请稍后再试";
+          ElMessage.error(errorMessage);
           break;
+        }
         default:
-          ElMessage.error(error.response.data.message || "请求失败");
+          ElMessage.error(error.response.data?.message || "请求失败");
       }
     } else {
       // 请求超时或网络错误

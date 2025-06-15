@@ -151,6 +151,11 @@ def document_upload(request):
         chunk_size = int(request.POST.get('chunk_size', 500))
         similarity_threshold = float(request.POST.get('similarity_threshold', 0.7))
         overlap_size = int(request.POST.get('overlap_size', 100))
+        custom_delimiter = request.POST.get('custom_delimiter', '\n\n')
+        window_size = int(request.POST.get('window_size', 3))
+        step_size = int(request.POST.get('step_size', 1))
+        min_chunk_size = int(request.POST.get('min_chunk_size', 50))
+        max_chunk_size = int(request.POST.get('max_chunk_size', 2000))
         file = request.FILES.get('file')
 
         # 验证参数
@@ -213,7 +218,12 @@ def document_upload(request):
             chunking_method=chunking_method, 
             chunk_size=chunk_size,
             similarity_threshold=similarity_threshold,
-            overlap_size=overlap_size
+            overlap_size=overlap_size,
+            custom_delimiter=custom_delimiter,
+            window_size=window_size,
+            step_size=step_size,
+            min_chunk_size=min_chunk_size,
+            max_chunk_size=max_chunk_size
         )
 
         # 保存文件

@@ -19,11 +19,17 @@ logger = logging.getLogger('knowledge_mgt')
 class DocumentProcessor:
     """文档处理类，用于解析不同类型的文档并分块"""
 
-    def __init__(self, chunking_method="token", chunk_size=500, similarity_threshold=0.7, overlap_size=100):
+    def __init__(self, chunking_method="token", chunk_size=500, similarity_threshold=0.7, overlap_size=100, 
+                 custom_delimiter=None, window_size=3, step_size=1, min_chunk_size=50, max_chunk_size=2000):
         self.chunking_method = chunking_method
         self.chunk_size = chunk_size
         self.similarity_threshold = similarity_threshold
         self.overlap_size = overlap_size
+        self.custom_delimiter = custom_delimiter or '\n\n'
+        self.window_size = window_size
+        self.step_size = step_size
+        self.min_chunk_size = min_chunk_size
+        self.max_chunk_size = max_chunk_size
         # 文档存储目录
         self.storage_dir = os.path.join(settings.MEDIA_ROOT, 'knowledge_docs')
         os.makedirs(self.storage_dir, exist_ok=True)
@@ -129,42 +135,108 @@ class DocumentProcessor:
             chunks = self._split_by_sentence(text)
         elif self.chunking_method == "paragraph":
             chunks = self._split_by_paragraph(text)
-        elif self.chunking_method == "fixed_length":
-            chunks = self._split_by_fixed_length(text)
+        elif self.chunking_method == "chapter":
+            chunks = self._split_by_chapter(text)
         elif self.chunking_method == "semantic":
             chunks = self._split_by_semantic(text)
         elif self.chunking_method == "recursive":
             chunks = self._split_recursive(text)
+        elif self.chunking_method == "sliding_window":
+            chunks = self._split_by_sliding_window(text)
+        elif self.chunking_method == "custom_delimiter":
+            chunks = self._split_by_custom_delimiter(text)
+        elif self.chunking_method == "fixed_length":
+            chunks = self._split_by_fixed_length(text)
         else:
             logger.warning(f"未实现的分块方法: {self.chunking_method}，使用Token分块")
             chunks = self._split_by_token(text)
 
-        # 过滤空块
-        chunks = [chunk.strip() for chunk in chunks if chunk.strip()]
+        # 过滤空块和过小的块
+        chunks = [chunk.strip() for chunk in chunks if chunk.strip() and len(chunk.strip()) >= self.min_chunk_size]
+        
+        # 合并过小的块（使用改进的合并逻辑）
+        chunks = self._merge_small_chunks(chunks)
+        
         logger.info(f"使用 {self.chunking_method} 方法分割文本，生成 {len(chunks)} 个分块")
         return chunks
 
     def _split_by_token(self, text):
-        """按Token数量分块（以字符为单位）"""
+        """按Token数量分块（基于简单的Token估算）"""
+        # 简单的Token估算：中文字符=1token，英文单词=1token，标点=0.5token
+        def estimate_tokens(text):
+            chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
+            english_words = len(re.findall(r'\b[a-zA-Z]+\b', text))
+            punctuation = len(re.findall(r'[^\w\s\u4e00-\u9fff]', text))
+            return chinese_chars + english_words + punctuation * 0.5
+        
         chunks = []
-        total_chars = len(text)
+        sentences = re.split(r'[.!?。！？；;]\s*', text)
+        current_chunk = []
+        current_tokens = 0
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            sentence_tokens = estimate_tokens(sentence)
+            
+            # 如果单个句子就超过限制，需要按字符分割
+            if sentence_tokens > self.chunk_size:
+                if current_chunk:
+                    chunks.append(' '.join(current_chunk))
+                    current_chunk = []
+                    current_tokens = 0
+                
+                # 按字符分割长句子
+                char_chunks = self._split_long_sentence_by_chars(sentence, self.chunk_size)
+                chunks.extend(char_chunks)
+                continue
+            
+            # 如果加入当前句子后超过限制，先保存当前块
+            if current_tokens + sentence_tokens > self.chunk_size and current_chunk:
+                chunks.append(' '.join(current_chunk))
+                current_chunk = []
+                current_tokens = 0
+            
+            current_chunk.append(sentence)
+            current_tokens += sentence_tokens
+        
+        # 添加最后一个块
+        if current_chunk:
+            chunks.append(' '.join(current_chunk))
+        
+        return chunks
+    
+    def _split_long_sentence_by_chars(self, sentence, max_tokens):
+        """将长句子按字符分割"""
+        chunks = []
+        # 估算每个字符的token数
+        def estimate_tokens(text):
+            chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
+            english_words = len(re.findall(r'\b[a-zA-Z]+\b', text))
+            punctuation = len(re.findall(r'[^\w\s\u4e00-\u9fff]', text))
+            return chinese_chars + english_words + punctuation * 0.5
+        
+        estimated_char_per_token = len(sentence) / max(1, estimate_tokens(sentence))
+        chars_per_chunk = int(max_tokens * estimated_char_per_token)
+        
         start = 0
-
-        while start < total_chars:
-            end = min(start + self.chunk_size, total_chars)
-            # 确保不会在单词中间截断
-            if end < total_chars:
-                # 尝试找到一个合适的断句点
-                for i in range(min(100, end - start)):
-                    if text[end - i] in ['.', '!', '?', '\n', '。', '！', '？', '；', ';']:
+        while start < len(sentence):
+            end = min(start + chars_per_chunk, len(sentence))
+            
+            # 尝试在合适的位置断开
+            if end < len(sentence):
+                for i in range(min(50, end - start)):
+                    if sentence[end - i] in [' ', '，', '、', ',']:
                         end = end - i + 1
                         break
-
-            chunk = text[start:end]
-            if chunk.strip():
+            
+            chunk = sentence[start:end].strip()
+            if chunk:
                 chunks.append(chunk)
             start = end
-
+        
         return chunks
 
     def _split_by_sentence(self, text):
@@ -256,30 +328,179 @@ class DocumentProcessor:
             
         return chunks
 
-    def _split_by_semantic(self, text):
-        """按语义相似度分块（简化实现）"""
-        # 这里实现一个简化的语义分块
-        # 实际应用中可能需要使用更复杂的NLP模型
+    def _split_by_chapter(self, text):
+        """按章节标题分块"""
+        # 检测标题模式：# ## ### 或 第一章 第二节 等
+        title_patterns = [
+            r'^#{1,6}\s+.+$',  # Markdown标题
+            r'^第[一二三四五六七八九十\d]+[章节部分]\s*.+$',  # 中文章节
+            r'^Chapter\s+\d+.*$',  # 英文章节
+            r'^Section\s+\d+.*$',  # 英文节
+            r'^\d+\.\s+.+$',  # 数字标题
+            r'^[A-Z][A-Z\s]+$',  # 全大写标题
+        ]
         
+        lines = text.split('\n')
+        chunks = []
+        current_chunk = []
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                if current_chunk:
+                    current_chunk.append('')
+                continue
+            
+            # 检查是否是标题
+            is_title = False
+            for pattern in title_patterns:
+                if re.match(pattern, line, re.MULTILINE):
+                    is_title = True
+                    break
+            
+            if is_title and current_chunk:
+                # 保存当前块
+                chunk_text = '\n'.join(current_chunk).strip()
+                if len(chunk_text) >= self.min_chunk_size:
+                    chunks.append(chunk_text)
+                current_chunk = [line]
+            else:
+                current_chunk.append(line)
+        
+        # 添加最后一个块
+        if current_chunk:
+            chunk_text = '\n'.join(current_chunk).strip()
+            if len(chunk_text) >= self.min_chunk_size:
+                chunks.append(chunk_text)
+        
+        # 如果没有检测到章节，回退到段落分块
+        if len(chunks) <= 1:
+            logger.info("未检测到明显的章节结构，回退到段落分块")
+            return self._split_by_paragraph(text)
+        
+        return chunks
+
+    def _split_by_custom_delimiter(self, text):
+        """按自定义分隔符分块"""
+        # 处理转义字符
+        delimiter = self.custom_delimiter.replace('\\n', '\n').replace('\\t', '\t')
+        logger.info(f"使用自定义分隔符分块，分隔符: '{delimiter}' (长度: {len(delimiter)})")
+        
+        chunks = text.split(delimiter)
+        logger.info(f"按分隔符分割后得到 {len(chunks)} 个原始块")
+        
+        result_chunks = []
+        
+        for i, chunk in enumerate(chunks):
+            chunk = chunk.strip()
+            logger.debug(f"处理第 {i+1} 个块，长度: {len(chunk)}, 最小长度要求: {self.min_chunk_size}")
+            logger.debug(f"块 {i+1} 内容预览: '{chunk[:50]}{'...' if len(chunk) > 50 else ''}'")
+            
+            if len(chunk) >= self.min_chunk_size:
+                # 如果块太大，进一步分割
+                if len(chunk) > self.max_chunk_size:
+                    logger.debug(f"块 {i+1} 太大 ({len(chunk)} > {self.max_chunk_size})，进一步分割")
+                    sub_chunks = self._split_by_sentence(chunk)
+                    result_chunks.extend(sub_chunks)
+                else:
+                    logger.debug(f"块 {i+1} 大小合适，直接添加")
+                    result_chunks.append(chunk)
+            else:
+                logger.debug(f"块 {i+1} 太小 ({len(chunk)} < {self.min_chunk_size})，跳过")
+        
+        logger.info(f"自定义分隔符分块完成，最终得到 {len(result_chunks)} 个有效块")
+        return result_chunks
+
+    def _split_by_sliding_window(self, text):
+        """滑动窗口分块"""
+        sentences = re.split(r'[.!?。！？；;]\s*', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        if len(sentences) < self.window_size:
+            return [text]
+        
+        chunks = []
+        for i in range(0, len(sentences) - self.window_size + 1, self.step_size):
+            window = sentences[i:i + self.window_size]
+            chunk = ' '.join(window)
+            if len(chunk) >= self.min_chunk_size:
+                chunks.append(chunk)
+        
+        return chunks
+
+    def _merge_small_chunks(self, chunks):
+        """合并过小的分块"""
+        if not chunks:
+            return chunks
+        
+        merged_chunks = []
+        current_chunk = ""
+        
+        for chunk in chunks:
+            # 如果当前块已经足够大，不需要合并
+            if len(chunk) >= self.chunk_size:
+                # 先保存之前积累的小块
+                if current_chunk:
+                    merged_chunks.append(current_chunk)
+                    current_chunk = ""
+                # 直接添加大块
+                merged_chunks.append(chunk)
+                continue
+            
+            # 尝试合并小块
+            if current_chunk:
+                # 如果合并后不会超过最大限制，且当前积累的块还不够大，则合并
+                if (len(current_chunk) + len(chunk) + 1 <= self.max_chunk_size and 
+                    len(current_chunk) < self.chunk_size):
+                    current_chunk += " " + chunk
+                else:
+                    # 否则保存当前块，开始新块
+                    merged_chunks.append(current_chunk)
+                    current_chunk = chunk
+            else:
+                current_chunk = chunk
+        
+        # 添加最后一个块
+        if current_chunk:
+            merged_chunks.append(current_chunk)
+        
+        logger.debug(f"合并前: {len(chunks)} 个块, 合并后: {len(merged_chunks)} 个块")
+        return merged_chunks
+
+    def _split_by_semantic(self, text):
+        """按语义相似度分块（改进实现）"""
         # 先按句子分割
-        sentences = self._split_by_sentence(text)
+        sentences = re.split(r'[.!?。！？；;]\s*', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
         if len(sentences) <= 1:
             return sentences
-            
+        
         chunks = []
         current_chunk = [sentences[0]]
         
         for i in range(1, len(sentences)):
-            # 简化的语义相似度判断：基于词汇重叠
-            similarity = self._calculate_text_similarity(
-                ' '.join(current_chunk), 
-                sentences[i]
-            )
+            current_text = ' '.join(current_chunk)
             
-            # 如果相似度低于阈值或当前块太大，开始新块
-            if (similarity < self.similarity_threshold or 
-                len(' '.join(current_chunk)) + len(sentences[i]) > self.chunk_size):
-                chunks.append(' '.join(current_chunk))
+            # 多维度相似度计算
+            lexical_similarity = self._calculate_lexical_similarity(current_text, sentences[i])
+            structural_similarity = self._calculate_structural_similarity(current_text, sentences[i])
+            
+            # 综合相似度
+            combined_similarity = 0.7 * lexical_similarity + 0.3 * structural_similarity
+            
+            # 检查长度限制
+            would_exceed_max = len(current_text) + len(sentences[i]) > self.max_chunk_size
+            would_be_too_small = len(current_text) < self.min_chunk_size
+            
+            # 决策逻辑
+            should_split = (
+                combined_similarity < self.similarity_threshold and 
+                not would_be_too_small
+            ) or would_exceed_max
+            
+            if should_split:
+                chunks.append(current_text)
                 current_chunk = [sentences[i]]
             else:
                 current_chunk.append(sentences[i])
@@ -287,8 +508,33 @@ class DocumentProcessor:
         # 添加最后一个块
         if current_chunk:
             chunks.append(' '.join(current_chunk))
-            
+        
         return chunks
+    
+    def _calculate_lexical_similarity(self, text1, text2):
+        """计算词汇相似度"""
+        words1 = set(re.findall(r'\w+', text1.lower()))
+        words2 = set(re.findall(r'\w+', text2.lower()))
+        
+        if not words1 or not words2:
+            return 0.0
+        
+        intersection = words1.intersection(words2)
+        union = words1.union(words2)
+        
+        return len(intersection) / len(union) if union else 0.0
+    
+    def _calculate_structural_similarity(self, text1, text2):
+        """计算结构相似度（基于句子长度、标点等）"""
+        # 句子长度相似度
+        len_ratio = min(len(text1), len(text2)) / max(len(text1), len(text2), 1)
+        
+        # 标点符号相似度
+        punct1 = set(re.findall(r'[^\w\s]', text1))
+        punct2 = set(re.findall(r'[^\w\s]', text2))
+        punct_similarity = len(punct1.intersection(punct2)) / max(len(punct1.union(punct2)), 1)
+        
+        return 0.6 * len_ratio + 0.4 * punct_similarity
 
     def _split_recursive(self, text):
         """递归分块（带重叠）"""
@@ -318,18 +564,7 @@ class DocumentProcessor:
                 
         return chunks
 
-    def _calculate_text_similarity(self, text1, text2):
-        """计算两个文本的相似度（基于词汇重叠）"""
-        words1 = set(text1.lower().split())
-        words2 = set(text2.lower().split())
-        
-        if not words1 or not words2:
-            return 0.0
-            
-        intersection = words1.intersection(words2)
-        union = words1.union(words2)
-        
-        return len(intersection) / len(union) if union else 0.0
+
 
 
 class VectorStore:

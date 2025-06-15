@@ -12,12 +12,15 @@ const currentDatabase = ref(null)
 const uploadDialogVisible = ref(false)
 // 分块方式选项
 const chunkingOptions = [
-  { label: 'Token分块 (按Token数量)', value: 'token' },
-  { label: '句子分块 (按句子边界)', value: 'sentence' },
-  { label: '段落分块 (按段落边界)', value: 'paragraph' },
-  { label: '固定长度分块 (按字符数)', value: 'fixed_length' },
-  { label: '语义分块 (按语义相似度)', value: 'semantic' },
-  { label: '递归分块 (递归分割)', value: 'recursive' }
+  { label: 'Token分块 (基于真实Token计数)', value: 'token' },
+  { label: '句子分块 (智能句子边界)', value: 'sentence' },
+  { label: '段落分块 (段落边界)', value: 'paragraph' },
+  { label: '章节分块 (标题层级)', value: 'chapter' },
+  { label: '语义分块 (嵌入模型语义)', value: 'semantic' },
+  { label: '递归分块 (层次化分割)', value: 'recursive' },
+  { label: '滑动窗口分块 (重叠窗口)', value: 'sliding_window' },
+  { label: '自定义分隔符分块', value: 'custom_delimiter' },
+  { label: '固定长度分块 (字符数)', value: 'fixed_length' }
 ]
 // 知识库列表
 const databaseList = ref([])
@@ -39,6 +42,11 @@ const uploadForm = reactive({
   chunk_size: 500,
   similarity_threshold: 0.7,
   overlap_size: 100,
+  custom_delimiter: '\n\n',
+  window_size: 3,
+  step_size: 1,
+  min_chunk_size: 50,
+  max_chunk_size: 2000,
   file: null
 })
 
@@ -54,7 +62,22 @@ const uploadFormRef = ref(null)
 
 // 是否显示分块大小滑块
 const showChunkSizeSlider = computed(() => {
-  return ['token', 'fixed_length', 'recursive'].includes(uploadForm.chunking_method)
+  return ['token', 'fixed_length', 'recursive', 'sliding_window'].includes(uploadForm.chunking_method)
+})
+
+// 是否显示自定义分隔符
+const showCustomDelimiter = computed(() => {
+  return uploadForm.chunking_method === 'custom_delimiter'
+})
+
+// 是否显示滑动窗口参数
+const showSlidingWindowParams = computed(() => {
+  return uploadForm.chunking_method === 'sliding_window'
+})
+
+// 是否显示章节分块参数
+const showChapterParams = computed(() => {
+  return uploadForm.chunking_method === 'chapter'
 })
 
 // 分块大小标签
@@ -75,11 +98,13 @@ const chunkSizeLabel = computed(() => {
 const chunkSizeRange = computed(() => {
   switch (uploadForm.chunking_method) {
     case 'token':
-      return { min: 100, max: 2000, step: 50 }
+      return { min: 50, max: 4000, step: 50 }
     case 'fixed_length':
-      return { min: 200, max: 5000, step: 100 }
+      return { min: 100, max: 8000, step: 100 }
     case 'recursive':
-      return { min: 500, max: 4000, step: 100 }
+      return { min: 200, max: 6000, step: 100 }
+    case 'sliding_window':
+      return { min: 100, max: 3000, step: 50 }
     default:
       return { min: 100, max: 2000, step: 50 }
   }
@@ -112,7 +137,8 @@ const fetchDatabaseList = async () => {
       loading.value = false // 如果没有知识库或已选择，直接取消loading
     }
   } catch (error) {
-    ElMessage.error('获取知识库列表失败：' + (error.message || '未知错误'))
+    // axios拦截器已经处理了错误信息显示
+    console.error('获取知识库列表失败:', error)
     loading.value = false // 发生错误时取消loading
   }
 }
@@ -133,7 +159,8 @@ const fetchDocumentList = async () => {
     documentList.value = data.data
     totalDocuments.value = data.total_records
   } catch (error) {
-    ElMessage.error('获取文档列表失败：' + (error.message || '未知错误'))
+    // axios拦截器已经处理了错误信息显示
+    console.error('获取文档列表失败:', error)
   } finally {
     loading.value = false
   }
@@ -165,6 +192,11 @@ const openUploadDialog = () => {
   uploadForm.chunk_size = 500
   uploadForm.similarity_threshold = 0.7
   uploadForm.overlap_size = 100
+  uploadForm.custom_delimiter = '---'
+  uploadForm.window_size = 3
+  uploadForm.step_size = 1
+  uploadForm.min_chunk_size = 10
+  uploadForm.max_chunk_size = 2000
   uploadForm.file = null
   fileList.value = []
 
@@ -221,8 +253,21 @@ const handleUpload = async () => {
     if (uploadForm.chunking_method === 'semantic') {
       formData.append('similarity_threshold', uploadForm.similarity_threshold)
     }
-    if (uploadForm.chunking_method === 'recursive') {
+    if (['recursive', 'sliding_window'].includes(uploadForm.chunking_method)) {
       formData.append('overlap_size', uploadForm.overlap_size)
+    }
+    if (uploadForm.chunking_method === 'custom_delimiter') {
+      formData.append('custom_delimiter', uploadForm.custom_delimiter)
+      formData.append('min_chunk_size', uploadForm.min_chunk_size)
+      formData.append('max_chunk_size', uploadForm.max_chunk_size)
+    }
+    if (uploadForm.chunking_method === 'sliding_window') {
+      formData.append('window_size', uploadForm.window_size)
+      formData.append('step_size', uploadForm.step_size)
+    }
+    if (['semantic', 'chapter'].includes(uploadForm.chunking_method)) {
+      formData.append('min_chunk_size', uploadForm.min_chunk_size)
+      formData.append('max_chunk_size', uploadForm.max_chunk_size)
     }
     
     formData.append('file', uploadForm.file)
@@ -249,11 +294,14 @@ const handleUpload = async () => {
 
       // 刷新文档列表
       fetchDocumentList()
+    } catch (error) {
+      // axios拦截器已经处理了错误信息显示，这里不需要重复显示
+      console.error('文档上传失败:', error)
     } finally {
       loadingInstance.close()
     }
   } catch (error) {
-    ElMessage.error('上传失败：' + (error.message || '未知错误'))
+    console.error('表单验证失败:', error)
   }
 }
 
@@ -280,7 +328,8 @@ const handleDeleteDocument = (document) => {
         // 刷新文档列表
         fetchDocumentList()
       } catch (error) {
-        ElMessage.error('删除失败：' + (error.message || '未知错误'))
+        // axios拦截器已经处理了错误信息显示
+        console.error('删除文档失败:', error)
       } finally {
         loading.value = false
       }
@@ -327,7 +376,8 @@ const fetchDocumentChunks = async () => {
     totalChunks.value = data?.total_records || currentDocument.value?.chunk_count || 0
   } catch (error) {
     documentChunks.value = []
-    ElMessage.error('获取文档分块失败：' + (error.message || '未知错误'))
+    // axios拦截器已经处理了错误信息显示
+    console.error('获取文档分块失败:', error)
   } finally {
     chunksLoading.value = false
   }
@@ -470,8 +520,8 @@ onMounted(async () => {
           <span class="chunk-size-tip">相似度阈值: {{ uploadForm.similarity_threshold }}</span>
         </el-form-item>
 
-        <!-- 递归分块特殊参数 -->
-        <el-form-item v-if="uploadForm.chunking_method === 'recursive'" label="重叠大小">
+        <!-- 递归分块和滑动窗口重叠参数 -->
+        <el-form-item v-if="['recursive', 'sliding_window'].includes(uploadForm.chunking_method)" label="重叠大小">
           <el-slider 
             v-model="uploadForm.overlap_size" 
             :min="0" 
@@ -481,6 +531,63 @@ onMounted(async () => {
           />
           <span class="chunk-size-tip">重叠字符数: {{ uploadForm.overlap_size }}</span>
         </el-form-item>
+
+        <!-- 自定义分隔符参数 -->
+        <el-form-item v-if="showCustomDelimiter" label="自定义分隔符">
+          <el-input 
+            v-model="uploadForm.custom_delimiter" 
+            placeholder="请输入分隔符，如：\n\n 或 ### 或 ====" 
+          />
+          <span class="chunk-size-tip">
+            常用分隔符：\n\n (双换行)、### (三级标题)、---- (分割线)
+          </span>
+        </el-form-item>
+
+        <!-- 滑动窗口特殊参数 -->
+        <template v-if="showSlidingWindowParams">
+          <el-form-item label="窗口大小">
+            <el-input-number 
+              v-model="uploadForm.window_size" 
+              :min="2" 
+              :max="10" 
+              style="width: 100%" 
+            />
+            <span class="chunk-size-tip">每个窗口包含的句子数量</span>
+          </el-form-item>
+          
+          <el-form-item label="步长">
+            <el-input-number 
+              v-model="uploadForm.step_size" 
+              :min="1" 
+              :max="5" 
+              style="width: 100%" 
+            />
+            <span class="chunk-size-tip">窗口移动的步长</span>
+          </el-form-item>
+        </template>
+
+        <!-- 语义分块和章节分块的大小限制 -->
+        <template v-if="['semantic', 'chapter'].includes(uploadForm.chunking_method)">
+          <el-form-item label="最小块大小">
+            <el-input-number 
+              v-model="uploadForm.min_chunk_size" 
+              :min="20" 
+              :max="500" 
+              style="width: 100%" 
+            />
+            <span class="chunk-size-tip">最小分块字符数</span>
+          </el-form-item>
+          
+          <el-form-item label="最大块大小">
+            <el-input-number 
+              v-model="uploadForm.max_chunk_size" 
+              :min="500" 
+              :max="10000" 
+              style="width: 100%" 
+            />
+            <span class="chunk-size-tip">最大分块字符数</span>
+          </el-form-item>
+        </template>
 
         <el-form-item label="选择文件">
           <el-upload class="upload-file" :auto-upload="false" :limit="1" :on-change="handleFileChange"
