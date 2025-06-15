@@ -2,7 +2,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import axios from '@/axios/index.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete, Edit, Connection, RefreshRight, MoreFilled } from '@element-plus/icons-vue'
+import { Plus, Delete, Edit, Connection, RefreshRight, MoreFilled, InfoFilled } from '@element-plus/icons-vue'
 
 // 加载状态
 const loading = ref(false)
@@ -13,7 +13,7 @@ const currentProvider = ref(null)
 // 分页相关
 const pagination = reactive({
   currentPage: 1,
-  pageSize: 4, // 每页显示4个服务商（2行，每行2个）
+  pageSize: 6, // 每页显示6个服务商（2行，每行3个）
   total: 0
 })
 // 当前页显示的服务商
@@ -30,7 +30,8 @@ const providerForm = reactive({
   id: '',
   name: '',
   code: '',
-  desc: ''
+  desc: '',
+  is_public: false
 })
 const providerFormRef = ref(null)
 const providerFormRules = {
@@ -50,7 +51,8 @@ const modelForm = reactive({
   base_url: '',
   max_tokens: 4096,
   temperature: 0.7,
-  is_default: false
+  is_default: false,
+  is_public: false
 })
 const modelFormRef = ref(null)
 const modelFormRules = {
@@ -137,13 +139,21 @@ const fetchProvidersAndModels = async () => {
 // 服务商操作
 const openAddProvider = () => {
   providerDialogTitle.value = '添加服务商'
-  Object.assign(providerForm, { id: '', name: '', code: '', desc: '' })
+  Object.assign(providerForm, { id: '', name: '', code: '', desc: '', is_public: false })
   providerDialogVisible.value = true
 }
 
 const openEditProvider = (provider) => {
   providerDialogTitle.value = '编辑服务商'
-  Object.assign(providerForm, provider)
+  console.log('编辑服务商数据:', provider) // 添加调试日志
+  Object.assign(providerForm, {
+    id: provider.id,
+    name: provider.name,
+    code: provider.code,
+    desc: provider.desc || '',
+    is_public: Boolean(provider.is_public) // 确保转换为布尔值
+  })
+  console.log('表单数据:', providerForm) // 添加调试日志
   providerDialogVisible.value = true
 }
 
@@ -202,14 +212,28 @@ const openAddModel = (provider) => {
     base_url: '',
     max_tokens: 4096,
     temperature: 0.7,
-    is_default: false
+    is_default: false,
+    is_public: false
   })
   modelDialogVisible.value = true
 }
 
 const openEditModel = (model) => {
   modelDialogTitle.value = '编辑模型配置'
-  Object.assign(modelForm, model)
+  console.log('编辑模型数据:', model) // 添加调试日志
+  Object.assign(modelForm, {
+    id: model.id,
+    provider_id: model.provider_id,
+    name: model.name,
+    model_type: model.model_type,
+    api_key: model.api_key,
+    base_url: model.base_url,
+    max_tokens: model.max_tokens || 4096,
+    temperature: model.temperature || 0.7,
+    is_default: Boolean(model.is_default), // 确保转换为布尔值
+    is_public: Boolean(model.is_public) // 确保转换为布尔值
+  })
+  console.log('表单数据:', modelForm) // 添加调试日志
   modelDialogVisible.value = true
 }
 
@@ -401,26 +425,24 @@ onMounted(() => {
       <!-- 服务商列表容器 -->
       <div class="providers-container">
         <el-row :gutter="24" class="provider-group-row">
-          <el-col v-for="provider in currentPageProviders" :key="provider.id" :span="12" class="provider-group-col">
+          <el-col v-for="provider in currentPageProviders" :key="provider.id" :span="8" class="provider-group-col">
           <el-card shadow="hover" class="provider-card">
             <div class="provider-card-header">
               <div class="provider-info">
-                <div class="provider-name">{{ provider.name }}</div>
+                <div class="provider-name">
+                  {{ provider.name }}
+                  <el-tag v-if="provider.is_public" type="success" size="small" style="margin-left: 8px">公共</el-tag>
+                </div>
                 <div class="provider-desc">{{ provider.desc || '暂无描述' }}</div>
               </div>
               <div class="provider-actions">
-                <el-button :icon="Edit" size="small" circle @click.stop="openEditProvider(provider)" />
-                <el-button :icon="Delete" size="small" circle @click.stop="deleteProvider(provider)" />
+                <el-button v-if="provider.can_edit" :icon="Edit" size="small" circle @click.stop="openEditProvider(provider)" />
+                <el-button v-if="provider.can_delete" :icon="Delete" size="small" circle @click.stop="deleteProvider(provider)" />
               </div>
             </div>
 
             <div class="model-list">
-              <el-empty v-if="!modelsByProvider[provider.id] || modelsByProvider[provider.id].length === 0"
-                description="暂无模型配置" class="custom-empty">
-                <div class="empty-hint">点击下方按钮添加第一个模型配置</div>
-              </el-empty>
-
-              <template v-else>
+              <template v-if="modelsByProvider[provider.id] && modelsByProvider[provider.id].length > 0">
                 <!-- 将模型分成一组组的行，每行两个模型 -->
                 <div v-for="(chunk, index) in chunkArray(modelsByProvider[provider.id], 2)" :key="index"
                   class="model-row">
@@ -428,8 +450,13 @@ onMounted(() => {
                     <el-col v-for="model in chunk" :key="model.id" :span="12">
                       <el-card shadow="never" class="model-card">
                         <div class="model-card-header">
-                          <div class="model-name">{{ model.name }}</div>
-                          <el-tag v-if="model.is_default" type="success" size="small">默认</el-tag>
+                          <div class="model-name">
+                            {{ model.name }}
+                          </div>
+                          <div class="model-tags">
+                            <el-tag v-if="model.is_public" type="warning" size="small">公共</el-tag>
+                            <el-tag v-if="model.is_default" type="success" size="small">默认</el-tag>
+                          </div>
                         </div>
 
                         <div class="model-meta">{{ model.model_type }}</div>
@@ -437,11 +464,18 @@ onMounted(() => {
                         }}</span></div>
 
                         <div class="model-actions">
-                          <el-button :icon="Connection" size="small" @click.stop="openTestDialog(model)">测试</el-button>
-                          <el-button :icon="Edit" size="small" @click.stop="openEditModel(model)">编辑</el-button>
-                          <el-button :icon="Delete" size="small" @click.stop="deleteModel(model)">删除</el-button>
-                          <el-button v-if="!model.is_default" type="success" size="small" link
-                            @click.stop="setAsDefault(model)">设为默认</el-button>
+                          <div class="model-action-row">
+                            <el-button :icon="Connection" size="small" @click.stop="openTestDialog(model)">测试</el-button>
+                            <el-button v-if="model.can_edit" :icon="Edit" size="small" @click.stop="openEditModel(model)">编辑</el-button>
+                            <div v-else class="button-placeholder"></div>
+                          </div>
+                          <div class="model-action-row">
+                            <el-button v-if="model.can_delete" :icon="Delete" size="small" @click.stop="deleteModel(model)">删除</el-button>
+                            <div v-else class="button-placeholder"></div>
+                            <el-button v-if="!model.is_default && model.can_edit" type="success" size="small" link
+                              @click.stop="setAsDefault(model)">设为默认</el-button>
+                            <div v-else class="button-placeholder"></div>
+                          </div>
                         </div>
                       </el-card>
                     </el-col>
@@ -449,8 +483,8 @@ onMounted(() => {
                 </div>
               </template>
 
-              <!-- 添加模型的按钮，无论有无模型都显示 -->
-              <div class="add-model-btn-container">
+              <!-- 添加模型的按钮，只有有权限的服务商才显示 -->
+              <div class="add-model-btn-container" v-if="provider.can_edit">
                 <el-button type="primary" @click="openAddModel(provider)" class="add-model-fixed-btn">
                   <el-icon>
                     <Plus />
@@ -467,7 +501,7 @@ onMounted(() => {
         <el-pagination
           v-model:current-page="pagination.currentPage"
           v-model:page-size="pagination.pageSize"
-          :page-sizes="[2, 4, 6, 8]"
+          :page-sizes="[3, 6, 9, 12]"
           :total="pagination.total"
           layout="total, sizes, prev, pager, next, jumper"
           @size-change="handleSizeChange"
@@ -488,6 +522,15 @@ onMounted(() => {
           </el-form-item>
           <el-form-item label="描述">
             <el-input v-model="providerForm.desc" placeholder="可选，服务商描述" />
+          </el-form-item>
+          <el-form-item label="公共服务商">
+            <div>
+              <el-switch v-model="providerForm.is_public" />
+              <div class="form-tip enhanced-tip">
+                <el-icon class="tip-icon"><InfoFilled /></el-icon>
+                公共服务商可被所有用户使用
+              </div>
+            </div>
           </el-form-item>
         </el-form>
         <template #footer>
@@ -517,11 +560,25 @@ onMounted(() => {
             <el-input-number v-model="modelForm.max_tokens" :min="1" :max="100000" :step="1024" style="width: 180px" />
           </el-form-item>
           <el-form-item label="温度参数" prop="temperature">
-            <el-slider v-model="modelForm.temperature" :min="0" :max="2" :step="0.1" show-input />
-            <div class="form-tip">较低的值使输出更确定，较高的值使输出更多样化</div>
+            <div>
+              <el-slider v-model="modelForm.temperature" :min="0" :max="2" :step="0.1" show-input />
+              <div class="form-tip enhanced-tip">
+                <el-icon class="tip-icon"><InfoFilled /></el-icon>
+                较低的值使输出更确定，较高的值使输出更多样化
+              </div>
+            </div>
           </el-form-item>
           <el-form-item label="设为默认">
             <el-switch v-model="modelForm.is_default" />
+          </el-form-item>
+          <el-form-item label="公共模型">
+            <div>
+              <el-switch v-model="modelForm.is_public" />
+              <div class="form-tip enhanced-tip">
+                <el-icon class="tip-icon"><InfoFilled /></el-icon>
+                公共模型可被所有用户使用
+              </div>
+            </div>
           </el-form-item>
         </el-form>
         <template #footer>
@@ -811,11 +868,25 @@ onMounted(() => {
 .model-card-header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
   font-size: 17px;
   font-weight: 600;
   color: #333;
   margin-bottom: 12px;
+}
+
+.model-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.model-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .model-meta {
@@ -829,9 +900,48 @@ onMounted(() => {
 
 .model-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
   margin-top: 16px;
+}
+
+.model-action-row {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.model-action-row {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 6px !important;
+  width: 100% !important;
+}
+
+.model-action-row .el-button {
+  padding: 4px 8px !important;
+  font-size: 12px !important;
+  height: 28px !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  text-align: center !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 4px !important;
+  width: 100% !important;
+}
+
+.model-action-row .el-button--link {
+  padding: 4px 6px !important;
+  height: 28px !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+}
+
+.button-placeholder {
+  height: 28px;
+  visibility: hidden;
 }
 
 .sensitive-info {
@@ -873,6 +983,21 @@ onMounted(() => {
   font-size: 12px;
   color: #909399;
   margin-top: 4px;
+}
+
+.enhanced-tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #606266;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.tip-icon {
+  color: #409eff;
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 .test-dialog-content {
@@ -969,43 +1094,18 @@ onMounted(() => {
   transition: all 0.3s ease;
 }
 
-/* 空状态优化 */
-:deep(.el-empty) {
-  margin-bottom: 30px;
-  padding: 30px 0;
-}
-
-:deep(.el-empty__image) {
-  width: 90px;
-  height: 90px;
-}
-
-:deep(.el-empty__description) {
-  margin-top: 16px;
-  color: #909399;
-}
-
-.custom-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 40px 0;
-}
-
-.empty-hint {
-  font-size: 14px;
-  color: #909399;
-  margin-top: 10px;
-  padding: 5px 15px;
-  background-color: #f5f7fa;
-  border-radius: 20px;
-  border: 1px dashed #dcdfe6;
-}
+/* 空状态优化 - 已移除空状态显示 */
 
 /* 添加响应式布局优化 */
 @media (max-width: 1200px) {
   .provider-group-col {
-    width: 100%;
+    width: 50%; /* 中等屏幕显示2列 */
+  }
+}
+
+@media (max-width: 900px) {
+  .provider-group-col {
+    width: 100%; /* 小屏幕显示1列 */
   }
 }
 
