@@ -362,3 +362,102 @@ def insert_data(table_name, columns, values, is_pk=False):
             "code": 500
         })
         return result
+
+
+def execute_query_with_params(sql, params=None):
+    """
+    执行带参数的查询SQL，返回字典格式结果
+    
+    :param sql: SQL语句
+    :param params: 参数列表
+    :return: 查询结果列表
+    """
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, params or [])
+            return dict_fetchall(cursor)
+    except Exception as e:
+        logger.error(f"执行查询失败: {sql}, 参数: {params}, 错误: {e}", exc_info=True)
+        return []
+
+
+def execute_update_with_params(sql, params=None):
+    """
+    执行带参数的更新SQL（INSERT/UPDATE/DELETE）
+    
+    :param sql: SQL语句
+    :param params: 参数列表
+    :return: 影响的行数，失败返回-1
+    """
+    try:
+        with connection.cursor() as cursor:
+            affected_rows = cursor.execute(sql, params or [])
+            return affected_rows
+    except Exception as e:
+        logger.error(f"执行更新失败: {sql}, 参数: {params}, 错误: {e}", exc_info=True)
+        return -1
+
+
+def check_record_exists(table_name, conditions):
+    """
+    检查记录是否存在
+    
+    :param table_name: 表名
+    :param conditions: 条件字典 {column: value}
+    :return: bool
+    """
+    where_clauses = []
+    params = []
+    
+    for column, value in conditions.items():
+        where_clauses.append(f"{column} = %s")
+        params.append(value)
+    
+    sql = f"SELECT 1 FROM {table_name} WHERE {' AND '.join(where_clauses)} LIMIT 1"
+    
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, params)
+            return cursor.fetchone() is not None
+    except Exception as e:
+        logger.error(f"检查记录存在性失败: {sql}, 参数: {params}, 错误: {e}", exc_info=True)
+        return False
+
+
+def get_record_by_id(table_name, record_id, id_column='id'):
+    """
+    根据ID获取单条记录
+    
+    :param table_name: 表名
+    :param record_id: 记录ID
+    :param id_column: ID列名，默认为'id'
+    :return: 记录字典或None
+    """
+    sql = f"SELECT * FROM {table_name} WHERE {id_column} = %s"
+    
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, [record_id])
+            result = cursor.fetchone()
+            if result:
+                columns = [col[0] for col in cursor.description]
+                return dict(zip(columns, result))
+            return None
+    except Exception as e:
+        logger.error(f"根据ID获取记录失败: {sql}, ID: {record_id}, 错误: {e}", exc_info=True)
+        return None
+
+
+def get_last_insert_id():
+    """
+    获取最后插入的ID
+    
+    :return: 最后插入的ID
+    """
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT LAST_INSERT_ID()")
+            return cursor.fetchone()[0]
+    except Exception as e:
+        logger.error(f"获取最后插入ID失败: {e}", exc_info=True)
+        return None

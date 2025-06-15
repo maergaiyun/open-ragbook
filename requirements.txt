@@ -1,3 +1,4 @@
+# 基础依赖 - 通用组件
 acres==0.3.0
 aiofiles==24.1.0
 annotated-types==0.7.0
@@ -12,25 +13,35 @@ colorama==0.4.6
 configobj==5.0.9
 configparser==7.2.0
 distro==1.9.0
+
+# Django 相关
 Django==5.1.3
 django-cors-headers==4.3.1
+
+# 文件处理和工具
 etelemetry==0.3.1
 faiss-cpu==1.11.0
 filelock==3.18.0
 fitz==0.0.1.dev2
 frontend==0.0.3
 fsspec==2025.5.0
+
+# HTTP 和网络
 h11==0.16.0
 httpcore==1.0.9
 httplib2==0.22.0
 httpx==0.28.1
 huggingface-hub==0.31.4
 idna==3.10
+
+# 模板和序列化
 isodate==0.6.1
 itsdangerous==2.2.0
 Jinja2==3.1.6
 jiter==0.10.0
 joblib==1.5.0
+
+# 数据处理
 looseversion==1.3.0
 lxml==5.4.0
 MarkupSafe==3.0.2
@@ -40,6 +51,8 @@ networkx==3.4.2
 nibabel==5.3.2
 nipype==1.10.0
 numpy==2.2.6
+
+# AI 和机器学习 (通用)
 openai==1.81.0
 packaging==25.0
 pandas==2.2.3
@@ -49,19 +62,27 @@ pillow==11.2.1
 prov==2.0.1
 psutil==5.9.6
 puremagic==1.29
+
+# 数据验证
 pydantic==2.11.4
 pydantic_core==2.33.2
 pydot==4.0.0
+
+# 认证和数据库
 PyJWT==2.8.0
 PyMuPDF==1.26.1
 PyMySQL==1.1.0
 pyparsing==3.2.3
+
+# 日期和时间
 python-dateutil==2.9.0.post0
 python-docx==1.1.2
 python-dotenv==1.0.1
 pytz==2025.2
 pyxnat==1.6.3
 PyYAML==6.0.2
+
+# 其他工具
 rdflib==6.3.2
 regex==2024.11.6
 requests==2.32.3
@@ -78,9 +99,11 @@ starlette==0.46.2
 sympy==1.14.0
 threadpoolctl==3.6.0
 tokenizers==0.21.1
-torch==2.7.1+cpu
-torchaudio==2.7.1+cpu
-torchvision==0.22.1+cpu
+
+# 注意: PyTorch 相关依赖需要根据GPU情况单独安装
+# CPU版本: torch==2.7.1+cpu torchaudio==2.7.1+cpu torchvision==0.22.1+cpu
+# GPU版本: torch==2.5.1+cu121 torchaudio==2.5.1+cu121 torchvision==0.20.1+cu121
+
 tqdm==4.67.1
 traits==7.0.2
 transformers==4.52.4
@@ -88,6 +111,8 @@ typing-inspection==0.4.1
 typing_extensions==4.13.2
 tzdata==2025.2
 urllib3==2.4.0
+
+# Web服务器
 uvicorn==0.34.2
 uWSGI==2.0.30
-wheel==0.45.1
+wheel==0.45.1 

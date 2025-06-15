@@ -1,6 +1,6 @@
 # Open RAGBook
 
-English | [中文](README_CN.md)
+English | [Chinese](README_CN.md)
 
 An intelligent knowledge management system based on RAG (Retrieval-Augmented Generation) technology, supporting integration and management of multiple large language models and embedding models.
 
@@ -55,6 +55,49 @@ Open RAGBook is a modern knowledge management platform that combines traditional
 
 ### Installation Steps
 
+#### Method 1: Automatic Installation (Recommended)
+
+1. **Clone Project**
+```bash
+git clone https://gitee.com/maergaiyun/open-ragbook.git
+cd open-ragbook
+```
+
+2. **Install Frontend Dependencies**
+```bash
+cd open_ragbook_ui
+npm install
+```
+
+3. **Automatic Backend Dependencies Installation**
+
+**Windows Users**:
+```bash
+cd ../
+# Double-click to run or execute in command line
+install.bat
+```
+
+**Linux/macOS Users**:
+```bash
+cd ../
+# Give script execution permission
+chmod +x install.sh
+# Run installation script
+./install.sh
+```
+
+**Manual Script Execution**:
+```bash
+cd ../
+# Upgrade pip
+python -m pip install --upgrade pip
+# Run installation script
+python install_requirements.py
+```
+
+#### Method 2: Manual Installation
+
 1. **Clone Project**
 ```bash
 git clone https://gitee.com/maergaiyun/open-ragbook.git
@@ -70,8 +113,67 @@ npm install
 3. **Install Backend Dependencies**
 ```bash
 cd ../
-pip install -r requirements-gpu.txt
+# Install basic dependencies
+pip install -r requirements.txt
+
+# Choose PyTorch version based on your system:
+
+# CPU version
+pip install torch==2.7.1+cpu torchaudio==2.7.1+cpu torchvision==0.22.1+cpu --index-url https://download.pytorch.org/whl/cpu
+
+# Or GPU version (if you have NVIDIA GPU)
+pip install torch==2.5.1+cu121 torchaudio==2.5.1+cu121 torchvision==0.20.1+cu121 GPUtil==1.4.0 --index-url https://download.pytorch.org/whl/cu121
 ```
+
+### Dependencies Installation Guide
+
+This project provides dependency installation tools that can automatically select the appropriate PyTorch version based on your system's GPU situation.
+
+#### System Requirements
+- Python 3.12 or higher
+- pip (Python package manager)
+
+#### Installation Process
+1. **Basic Dependencies Installation**: Install all common dependency packages
+2. **GPU Detection**: Automatically detect if the system has NVIDIA GPU
+3. **PyTorch Installation**: Choose appropriate version based on GPU situation
+   - With GPU: Install CUDA version (torch==2.5.1+cu121)
+   - Without GPU: Install CPU version (torch==2.7.1+cpu)
+4. **Installation Verification**: Verify all dependencies are correctly installed
+
+#### Troubleshooting
+
+**Common Issues**:
+
+1. **Python Version Too Low**
+   - Ensure using Python 3.12 or higher
+   - Run `python --version` to check version
+
+2. **pip Version Too Old**
+   - Run `python -m pip install --upgrade pip` to upgrade pip
+
+3. **Network Connection Issues**
+   - Use domestic mirror source: `pip install -i https://pypi.tuna.tsinghua.edu.cn/simple/`
+
+4. **GPU Detection Error**
+   - Ensure NVIDIA drivers are installed
+   - Run `nvidia-smi` to check GPU status
+
+5. **CUDA Version Mismatch**
+   - Check CUDA version: `nvcc --version`
+   - Choose corresponding PyTorch version based on CUDA version
+
+**Verify Installation**:
+```python
+import torch
+print(f"PyTorch Version: {torch.__version__}")
+print(f"CUDA Available: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"GPU Count: {torch.cuda.device_count()}")
+    print(f"Current GPU: {torch.cuda.get_device_name(0)}")
+```
+
+### Environment Configuration
 
 4. **Configure Environment**
 ```bash
@@ -151,7 +253,10 @@ open-ragbook/
 ├── system_mgt/              # Backend system management module
 ├── knowledge_mgt/           # Knowledge management module
 ├── chat_mgt/               # Chat management module
-└── requirements.txt        # Python dependencies
+├── requirements.txt        # Python basic dependencies
+├── install_requirements.py # Dependencies installation script
+├── install.bat             # Windows installation script
+└── install.sh              # Linux/macOS installation script
 ```
 
 ### Code Standards
@@ -224,4 +329,8 @@ For technical support or business cooperation, you can directly contact the auth
 - Support for multiple large language model integration
 - Implemented embedding model management
 - Completed user permission system
-- Implemented knowledge base management functionality 
+- Implemented knowledge base management functionality
+
+---
+
+**Note**: Initial installation may take a long time, especially when downloading large packages like PyTorch. Please be patient. 

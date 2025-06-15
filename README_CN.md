@@ -1,6 +1,6 @@
 # Open RAGBook
 
-[English](./README_EN.md) | 中文
+[英文](./README_EN.md) | 中文
 
 一个基于RAG（Retrieval-Augmented Generation）技术的智能知识管理系统，支持多种大语言模型和嵌入模型的集成与管理。
 
@@ -55,6 +55,49 @@ Open RAGBook 是一个现代化的知识管理平台，通过RAG技术将传统�
 
 ### 安装步骤
 
+#### 方法一：自动安装（推荐）
+
+1. **克隆项目**
+```bash
+git clone https://gitee.com/maergaiyun/open-ragbook.git
+cd open-ragbook
+```
+
+2. **安装前端依赖**
+```bash
+cd open_ragbook_ui
+npm install
+```
+
+3. **自动安装后端依赖**
+
+**Windows用户**:
+```bash
+cd ../
+# 双击运行或在命令行中执行
+install.bat
+```
+
+**Linux/macOS用户**:
+```bash
+cd ../
+# 给脚本执行权限
+chmod +x install.sh
+# 运行安装脚本
+./install.sh
+```
+
+**手动运行安装脚本**:
+```bash
+cd ../
+# 升级pip
+python -m pip install --upgrade pip
+# 运行安装脚本
+python install_requirements.py
+```
+
+#### 方法二：手动安装
+
 1. **克隆项目**
 ```bash
 git clone https://gitee.com/maergaiyun/open-ragbook.git
@@ -70,8 +113,67 @@ npm install
 3. **安装后端依赖**
 ```bash
 cd ../
-pip install -r requirements-gpu.txt
+# 安装基础依赖
+pip install -r requirements.txt
+
+# 根据您的系统选择PyTorch版本：
+
+# CPU版本
+pip install torch==2.7.1+cpu torchaudio==2.7.1+cpu torchvision==0.22.1+cpu --index-url https://download.pytorch.org/whl/cpu
+
+# 或GPU版本（如果有NVIDIA GPU）
+pip install torch==2.5.1+cu121 torchaudio==2.5.1+cu121 torchvision==0.20.1+cu121 GPUtil==1.4.0 --index-url https://download.pytorch.org/whl/cu121
 ```
+
+### 依赖安装说明
+
+本项目提供了依赖安装工具，可以根据您的系统GPU情况自动选择合适的PyTorch版本。
+
+#### 系统要求
+- Python 3.12 或更高版本
+- pip (Python包管理器)
+
+#### 安装过程
+1. **基础依赖安装**: 安装所有通用依赖包
+2. **GPU检测**: 自动检测系统是否有NVIDIA GPU
+3. **PyTorch安装**: 根据GPU情况选择合适版本
+   - 有GPU: 安装CUDA版本 (torch==2.5.1+cu121)
+   - 无GPU: 安装CPU版本 (torch==2.7.1+cpu)
+4. **安装验证**: 验证所有依赖是否正确安装
+
+#### 故障排除
+
+**常见问题**:
+
+1. **Python版本过低**
+   - 确保使用Python 3.12或更高版本
+   - 运行 `python --version` 检查版本
+
+2. **pip版本过旧**
+   - 运行 `python -m pip install --upgrade pip` 升级pip
+
+3. **网络连接问题**
+   - 使用国内镜像源：`pip install -i https://pypi.tuna.tsinghua.edu.cn/simple/`
+
+4. **GPU检测错误**
+   - 确保安装了NVIDIA驱动
+   - 运行 `nvidia-smi` 检查GPU状态
+
+5. **CUDA版本不匹配**
+   - 检查CUDA版本：`nvcc --version`
+   - 根据CUDA版本选择对应的PyTorch版本
+
+**验证安装**:
+```python
+import torch
+print(f"PyTorch版本: {torch.__version__}")
+print(f"CUDA可用: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"GPU数量: {torch.cuda.device_count()}")
+    print(f"当前GPU: {torch.cuda.get_device_name(0)}")
+```
+
+### 配置环境
 
 4. **配置环境**
 ```bash
@@ -151,7 +253,10 @@ open-ragbook/
 ├── system_mgt/              # 后端系统管理模块
 ├── knowledge_mgt/           # 知识管理模块
 ├── chat_mgt/               # 对话管理模块
-└── requirements.txt        # Python依赖
+├── requirements.txt        # Python基础依赖
+├── install_requirements.py # 依赖安装脚本
+├── install.bat             # Windows安装脚本
+└── install.sh              # Linux/macOS安装脚本
 ```
 
 ### 代码规范
@@ -224,4 +329,8 @@ docker run -d -p 8000:8000 open-ragbook
 - 支持多种大语言模型集成
 - 实现嵌入模型管理
 - 完成用户权限系统
-- 实现知识库管理功能 
+- 实现知识库管理功能
+
+---
+
+**注意**: 首次安装可能需要较长时间，特别是下载PyTorch等大型包时，请耐心等待。 
