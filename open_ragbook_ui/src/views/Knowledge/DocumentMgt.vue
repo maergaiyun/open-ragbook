@@ -2,7 +2,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import axios from '@/axios/index.js'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
-import { UploadFilled, View, Document } from '@element-plus/icons-vue'
+import { UploadFilled, View, Document, List, Clock, Loading, Check, Close } from '@element-plus/icons-vue'
 
 // 加载状态
 const loading = ref(false)
@@ -59,6 +59,18 @@ const uploadRules = {
 
 // 上传表单引用
 const uploadFormRef = ref(null)
+
+// 上传队列相关
+const uploadQueue = ref([])
+const isUploading = ref(false)
+const queueDialogVisible = ref(false)
+const queueStats = ref({
+  pending: 0,
+  processing: 0,
+  completed: 0,
+  failed: 0
+})
+const currentTask = ref(null)
 
 // 是否显示分块大小滑块
 const showChunkSizeSlider = computed(() => {
@@ -231,7 +243,7 @@ const handleFileRemove = () => {
   uploadForm.file = null
 }
 
-// 上传文档
+// 上传文档（使用队列）
 const handleUpload = async () => {
   if (!uploadFormRef.value) return
 
@@ -272,33 +284,38 @@ const handleUpload = async () => {
     
     formData.append('file', uploadForm.file)
 
-    // 显示全屏加载中
-    const loadingInstance = ElLoading.service({
-      lock: true,
-      text: '文档上传并处理中...',
-      background: 'rgba(0, 0, 0, 0.7)'
-    })
+    isUploading.value = true
 
     try {
-      await axios.post('knowledge/document/upload', formData, {
+      // 使用新的任务队列API
+      const response = await axios.post('knowledge/upload/task', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
       })
 
-      ElMessage.success('文档上传成功')
+      ElMessage.success(`文档已加入上传队列: ${response.data.filename}`)
       uploadDialogVisible.value = false
 
-      // 刷新知识库列表，更新文档数量
-      await fetchDatabaseList()
+      // 添加到本地队列显示
+      uploadQueue.value.unshift({
+        task_id: response.data.task_id,
+        filename: response.data.filename,
+        status: 'pending',
+        progress: 0,
+        created_at: new Date().toLocaleString()
+      })
 
-      // 刷新文档列表
-      fetchDocumentList()
+      // 开始监控任务状态
+      startTaskMonitoring(response.data.task_id)
+
+      // 刷新队列状态
+      await fetchQueueStatus()
+
     } catch (error) {
-      // axios拦截器已经处理了错误信息显示，这里不需要重复显示
       console.error('文档上传失败:', error)
     } finally {
-      loadingInstance.close()
+      isUploading.value = false
     }
   } catch (error) {
     console.error('表单验证失败:', error)
@@ -389,8 +406,92 @@ const handleChunkPageChange = (page) => {
   fetchDocumentChunks()
 }
 
+// 队列管理相关方法
+const fetchQueueStatus = async () => {
+  try {
+    const response = await axios.get('knowledge/upload/queue/status')
+    queueStats.value = response.data.queue_stats
+    currentTask.value = response.data.current_task
+  } catch (error) {
+    console.error('获取队列状态失败:', error)
+  }
+}
+
+const fetchUploadTasks = async () => {
+  try {
+    const response = await axios.get('knowledge/upload/tasks')
+    uploadQueue.value = response.data.tasks || []
+  } catch (error) {
+    console.error('获取上传任务失败:', error)
+  }
+}
+
+const startTaskMonitoring = (taskId) => {
+  const checkTaskStatus = async () => {
+    try {
+      const response = await axios.get(`knowledge/upload/task/${taskId}/status`)
+      const task = response.data.task
+      
+      // 更新本地队列中的任务状态
+      const index = uploadQueue.value.findIndex(t => t.task_id === taskId)
+      if (index !== -1) {
+        uploadQueue.value[index] = { ...uploadQueue.value[index], ...task }
+      }
+      
+      // 如果任务完成或失败，停止监控并刷新文档列表
+      if (task.status === 'completed') {
+        ElMessage.success(`文档 ${task.filename} 处理完成`)
+        await fetchDatabaseList()
+        await fetchDocumentList()
+        await fetchQueueStatus()
+      } else if (task.status === 'failed') {
+        ElMessage.error(`文档 ${task.filename} 处理失败: ${task.error_message}`)
+        await fetchQueueStatus()
+      } else {
+        // 继续监控
+        setTimeout(checkTaskStatus, 2000)
+      }
+    } catch (error) {
+      console.error('检查任务状态失败:', error)
+    }
+  }
+  
+  // 开始监控
+  setTimeout(checkTaskStatus, 1000)
+}
+
+const openQueueDialog = async () => {
+  queueDialogVisible.value = true
+  await fetchUploadTasks()
+  await fetchQueueStatus()
+}
+
+const getStatusColor = (status) => {
+  switch (status) {
+    case 'pending': return 'info'
+    case 'processing': return 'warning'
+    case 'completed': return 'success'
+    case 'failed': return 'danger'
+    default: return 'info'
+  }
+}
+
+const getStatusText = (status) => {
+  switch (status) {
+    case 'pending': return '等待中'
+    case 'processing': return '处理中'
+    case 'completed': return '已完成'
+    case 'failed': return '失败'
+    default: return '未知'
+  }
+}
+
 onMounted(async () => {
   await fetchDatabaseList()
+  await fetchQueueStatus()
+  
+  // 定期刷新队列状态
+  setInterval(fetchQueueStatus, 5000)
 })
 </script>
 
@@ -428,14 +529,29 @@ onMounted(async () => {
       <div class="main-content">
         <div class="documents-header">
           <h3>{{ currentDatabase ? currentDatabase.name : '请选择知识库' }} - 文档列表</h3>
-          <el-button type="primary" :icon="UploadFilled" @click="openUploadDialog" :disabled="!currentDatabase">
-            上传文档
-          </el-button>
+          <div class="header-actions">
+            <el-badge v-if="queueStats.pending > 0" :value="queueStats.pending" class="queue-badge">
+              <el-button type="info" plain @click="openQueueDialog" :disabled="!currentDatabase">
+                <el-icon><List /></el-icon>
+                上传队列
+              </el-button>
+            </el-badge>
+            <el-button v-else type="info" plain @click="openQueueDialog" :disabled="!currentDatabase">
+              <el-icon><List /></el-icon>
+              上传队列
+            </el-button>
+            <el-button type="primary" :icon="UploadFilled" @click="openUploadDialog" 
+                       :disabled="!currentDatabase" :loading="isUploading">
+              上传文档
+            </el-button>
+          </div>
         </div>
 
         <div class="documents-list">
           <div v-if="documentList.length === 0" class="empty-state">
-            <div class="empty-icon">📄</div>
+            <div class="empty-icon">
+              <el-icon><Document /></el-icon>
+            </div>
             <div class="empty-text">暂无文档</div>
             <div class="empty-hint">点击右上角"上传文档"按钮添加文档</div>
           </div>
@@ -608,6 +724,111 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
+    <!-- 上传队列对话框 -->
+    <el-dialog v-model="queueDialogVisible" title="文档上传队列" width="70%" destroy-on-close>
+      <div class="queue-stats">
+        <el-row :gutter="16">
+          <el-col :span="6">
+            <div class="stat-card pending">
+              <div class="stat-icon">
+                <el-icon><Clock /></el-icon>
+              </div>
+              <div class="stat-content">
+                <div class="stat-value">{{ queueStats.pending }}</div>
+                <div class="stat-label">等待中</div>
+              </div>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="stat-card processing">
+              <div class="stat-icon">
+                <el-icon><Loading /></el-icon>
+              </div>
+              <div class="stat-content">
+                <div class="stat-value">{{ queueStats.processing }}</div>
+                <div class="stat-label">处理中</div>
+              </div>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="stat-card completed">
+              <div class="stat-icon">
+                <el-icon><Check /></el-icon>
+              </div>
+              <div class="stat-content">
+                <div class="stat-value">{{ queueStats.completed }}</div>
+                <div class="stat-label">已完成</div>
+              </div>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="stat-card failed">
+              <div class="stat-icon">
+                <el-icon><Close /></el-icon>
+              </div>
+              <div class="stat-content">
+                <div class="stat-value">{{ queueStats.failed }}</div>
+                <div class="stat-label">失败</div>
+              </div>
+            </div>
+          </el-col>
+        </el-row>
+      </div>
+
+      <div v-if="currentTask" class="current-task">
+        <h4>当前处理任务</h4>
+        <el-card>
+          <div class="task-info">
+            <div class="task-name">{{ currentTask.filename }}</div>
+            <div class="task-progress">
+              <el-progress :percentage="currentTask.progress" :status="currentTask.progress === 100 ? 'success' : null" />
+            </div>
+          </div>
+        </el-card>
+      </div>
+
+      <div class="queue-list">
+        <h4>任务列表</h4>
+        <el-table :data="uploadQueue" style="width: 100%" max-height="400">
+          <el-table-column prop="filename" label="文件名" min-width="200"></el-table-column>
+          <el-table-column label="状态" width="120">
+            <template #default="{ row }">
+              <el-tag :type="getStatusColor(row.status)" size="small">
+                {{ getStatusText(row.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="进度" width="150">
+            <template #default="{ row }">
+              <el-progress 
+                v-if="row.status === 'processing'" 
+                :percentage="row.progress || 0" 
+                :stroke-width="6"
+                :show-text="false"
+              />
+              <span v-else-if="row.status === 'completed'" class="progress-text">100%</span>
+              <span v-else-if="row.status === 'failed'" class="progress-text error">失败</span>
+              <span v-else class="progress-text">等待中</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="chunk_count" label="分块数" width="100">
+            <template #default="{ row }">
+              {{ row.chunk_count || '-' }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="created_at" label="创建时间" width="180"></el-table-column>
+          <el-table-column label="错误信息" min-width="200">
+            <template #default="{ row }">
+              <el-text v-if="row.error_message" type="danger" size="small">
+                {{ row.error_message }}
+              </el-text>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </el-dialog>
+
     <!-- 文档分块查看对话框 -->
     <el-dialog v-model="chunksDialogVisible" :title="currentDocument ? `${currentDocument.filename} - 分块详情` : '分块详情'"
       width="60%" destroy-on-close class="chunks-dialog">
@@ -655,7 +876,9 @@ onMounted(async () => {
           </div>
         </template>
         <div v-else class="empty-state">
-          <div class="empty-icon">🧩</div>
+          <div class="empty-icon">
+            <el-icon><Document /></el-icon>
+          </div>
           <div class="empty-text">暂无分块数据</div>
         </div>
 
@@ -819,6 +1042,12 @@ onMounted(async () => {
   font-size: 18px;
 }
 
+.header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
 .documents-header .el-button {
   padding: 10px 20px;
   font-weight: 500;
@@ -828,6 +1057,10 @@ onMounted(async () => {
 .documents-header .el-button:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(64, 158, 255, 0.2);
+}
+
+.queue-badge {
+  margin-left: 8px;
 }
 
 .documents-list {
@@ -944,6 +1177,11 @@ onMounted(async () => {
   font-size: 48px;
   margin-bottom: 16px;
   opacity: 0.6;
+  color: #c0c4cc;
+}
+
+.empty-icon .el-icon {
+  font-size: 48px;
 }
 
 .empty-text {
@@ -1247,5 +1485,145 @@ onMounted(async () => {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
+}
+
+/* 队列对话框样式 */
+.queue-stats {
+  margin-bottom: 24px;
+  padding: 16px;
+  background-color: #f9fafc;
+  border-radius: 8px;
+  border: 1px solid #ebeef5;
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  background-color: white;
+  border-radius: 8px;
+  border: 1px solid #ebeef5;
+  transition: all 0.3s ease;
+  cursor: default;
+}
+
+.stat-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.stat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+  font-size: 18px;
+}
+
+.stat-card.pending .stat-icon {
+  background-color: #f4f4f5;
+  color: #909399;
+}
+
+.stat-card.processing .stat-icon {
+  background-color: #fdf6ec;
+  color: #e6a23c;
+}
+
+.stat-card.completed .stat-icon {
+  background-color: #f0f9ff;
+  color: #67c23a;
+}
+
+.stat-card.failed .stat-icon {
+  background-color: #fef0f0;
+  color: #f56c6c;
+}
+
+.stat-content {
+  flex: 1;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: #303133;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.stat-label {
+  font-size: 14px;
+  color: #606266;
+  font-weight: 500;
+}
+
+.queue-badge {
+  margin-right: 12px;
+}
+
+:deep(.queue-badge .el-badge__content) {
+  background-color: #f56c6c;
+  border: none;
+  font-size: 12px;
+  height: 18px;
+  line-height: 18px;
+  padding: 0 6px;
+  min-width: 18px;
+}
+
+.current-task {
+  margin-bottom: 24px;
+}
+
+.current-task h4 {
+  margin: 0 0 12px 0;
+  color: #303133;
+  font-weight: 600;
+}
+
+.task-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.task-name {
+  font-weight: 500;
+  color: #303133;
+  font-size: 14px;
+}
+
+.task-progress {
+  width: 100%;
+}
+
+.queue-list h4 {
+  margin: 0 0 16px 0;
+  color: #303133;
+  font-weight: 600;
+}
+
+.progress-text {
+  font-size: 12px;
+  color: #606266;
+}
+
+.progress-text.error {
+  color: #f56c6c;
+}
+
+:deep(.el-statistic__content) {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+:deep(.el-statistic__title) {
+  font-size: 14px;
+  color: #606266;
+  margin-bottom: 8px;
 }
 </style>
