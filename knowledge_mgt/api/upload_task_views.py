@@ -26,6 +26,13 @@ logger = logging.getLogger('knowledge_mgt')
 task_processing_lock = threading.Lock()
 current_processing_task = None
 
+# 队列状态缓存
+queue_status_cache = {
+    'data': None,
+    'last_update': 0,
+    'cache_duration': 5  # 缓存5秒
+}
+
 
 @require_http_methods(["POST"])
 @csrf_exempt
@@ -397,6 +404,10 @@ def update_task_status(task_id, status, progress=None, error_message=None,
             sql = f"UPDATE document_upload_task SET {', '.join(update_fields)} WHERE task_id = %s"
             cursor.execute(sql, params)
             
+            # 清除队列状态缓存
+            queue_status_cache['data'] = None
+            queue_status_cache['last_update'] = 0
+            
     except Exception as e:
         logger.error(f"更新任务状态失败: {str(e)}", exc_info=True)
 
@@ -453,8 +464,15 @@ def get_knowledge_database_info(database_id):
 @csrf_exempt
 @jwt_required()
 def get_queue_status(request):
-    """获取队列状态"""
+    """获取队列状态（带缓存优化）"""
     try:
+        current_time = time.time()
+        
+        # 检查缓存是否有效
+        if (queue_status_cache['data'] is not None and 
+            current_time - queue_status_cache['last_update'] < queue_status_cache['cache_duration']):
+            return create_success_response(queue_status_cache['data'])
+        
         with connection.cursor() as cursor:
             # 获取队列统计信息
             cursor.execute("""
@@ -487,7 +505,8 @@ def get_queue_status(request):
                         'started_at': task_row[3].strftime("%Y-%m-%d %H:%M:%S") if task_row[3] else None
                     }
         
-        return create_success_response({
+        # 构建响应数据
+        response_data = {
             "queue_stats": {
                 "pending": stats[0] or 0,
                 "processing": stats[1] or 0,
@@ -495,7 +514,13 @@ def get_queue_status(request):
                 "failed": stats[3] or 0
             },
             "current_task": current_task
-        })
+        }
+        
+        # 更新缓存
+        queue_status_cache['data'] = response_data
+        queue_status_cache['last_update'] = current_time
+        
+        return create_success_response(response_data)
         
     except Exception as e:
         logger.error(f"获取队列状态失败: {str(e)}", exc_info=True)

@@ -154,8 +154,10 @@ class DocumentProcessor:
         # 过滤空块和过小的块
         chunks = [chunk.strip() for chunk in chunks if chunk.strip() and len(chunk.strip()) >= self.min_chunk_size]
         
-        # 合并过小的块（使用改进的合并逻辑）
-        chunks = self._merge_small_chunks(chunks)
+        # 对于自定义分隔符分块，不进行自动合并，保持用户指定的分割结果
+        if self.chunking_method != "custom_delimiter":
+            # 合并过小的块（使用改进的合并逻辑）
+            chunks = self._merge_small_chunks(chunks)
         
         logger.info(f"使用 {self.chunking_method} 方法分割文本，生成 {len(chunks)} 个分块")
         return chunks
@@ -724,65 +726,105 @@ class VectorStore:
 
     def delete_chunks(self, knowledge_db_id, chunk_ids):
         """从索引中删除指定的分块"""
-        # 注意：FAISS不支持直接删除，我们通过重建索引来实现
-        db_vector_dir = os.path.join(self.vector_dir, str(knowledge_db_id))
-        index_path = os.path.join(db_vector_dir, "faiss.index")
-        mapping_path = os.path.join(db_vector_dir, "id_mapping.json")
-
-        if not os.path.exists(index_path) or not os.path.exists(mapping_path):
-            logger.error(f"知识库 {knowledge_db_id} 的索引不存在")
-            return False
-
+        logger.info(f"开始删除知识库 {knowledge_db_id} 中的分块: {chunk_ids}")
+        
+        # FAISS不支持直接删除，我们通过重建整个索引来实现
+        return self.rebuild_index(knowledge_db_id)
+    
+    def rebuild_index(self, knowledge_db_id):
+        """重建知识库的向量索引"""
+        logger.info(f"开始重建知识库 {knowledge_db_id} 的向量索引")
+        
         try:
-            # 读取ID映射
-            with open(mapping_path, 'r') as f:
-                id_mapping = json.load(f)
-
-            # 找出要删除的向量ID
-            vector_ids_to_delete = set()
-            for vector_id, chunk_id in id_mapping.items():
-                if chunk_id in chunk_ids:
-                    vector_ids_to_delete.add(int(vector_id))
-
-            # 读取索引
-            index = faiss.read_index(index_path)
-
-            if not vector_ids_to_delete:
-                logger.info(f"没有找到要删除的分块")
-                return True
-
-            # 创建新的ID映射
-            new_id_mapping = {}
-            for vector_id, chunk_id in id_mapping.items():
-                if int(vector_id) not in vector_ids_to_delete:
-                    new_id_mapping[vector_id] = chunk_id
-
-            # 创建新的索引并复制保留的向量
-            if self.index_type == "Flat":
-                new_index = faiss.IndexFlatL2(self.vector_dimension)
-            else:
-                # 默认使用Flat
-                new_index = faiss.IndexFlatL2(self.vector_dimension)
-
-            # 如果所有向量都被删除，直接保存空索引
-            if len(new_id_mapping) == 0:
-                faiss.write_index(new_index, index_path)
+            # 导入必要的模块
+            from open_ragbook_server.utils.db_utils import execute_query_with_params
+            from sentence_transformers import SentenceTransformer
+            
+            # 1. 获取知识库信息
+            kb_sql = "SELECT * FROM knowledge_database WHERE id = %s"
+            kb_info = execute_query_with_params(kb_sql, [knowledge_db_id])
+            if not kb_info:
+                logger.error(f"知识库 {knowledge_db_id} 不存在")
+                return False
+            
+            kb = kb_info[0]
+            
+            # 2. 获取所有有效的文档分块
+            chunk_sql = """
+                SELECT dc.id, dc.content
+                FROM knowledge_document_chunk dc
+                JOIN knowledge_document d ON dc.document_id = d.id
+                WHERE d.database_id = %s
+                ORDER BY dc.id
+            """
+            chunks = execute_query_with_params(chunk_sql, [knowledge_db_id])
+            
+            db_vector_dir = os.path.join(self.vector_dir, str(knowledge_db_id))
+            os.makedirs(db_vector_dir, exist_ok=True)
+            index_path = os.path.join(db_vector_dir, "faiss.index")
+            mapping_path = os.path.join(db_vector_dir, "id_mapping.json")
+            
+            if not chunks:
+                logger.info(f"知识库 {knowledge_db_id} 没有文档分块，创建空索引")
+                # 创建空索引
+                index = faiss.IndexFlatL2(self.vector_dimension)
+                faiss.write_index(index, index_path)
+                
+                # 创建空映射
                 with open(mapping_path, 'w') as f:
                     json.dump({}, f)
-                logger.info(f"已从知识库 {knowledge_db_id} 的索引中删除所有向量")
+                
+                logger.info(f"已为知识库 {knowledge_db_id} 创建空索引")
                 return True
-
-            # 否则，重建索引
-            # 这需要访问原始向量，但FAISS不直接支持
-            # 实际应用中，可能需要存储原始向量或重新生成
-            logger.warning("FAISS不支持直接删除，需要完整实现来重建索引")
-
-            # 保存更新后的映射
+            
+            # 3. 获取嵌入模型
+            model_sql = "SELECT * FROM embedding_model WHERE id = %s"
+            model_info = execute_query_with_params(model_sql, [kb['embedding_model_id']])
+            if not model_info:
+                logger.error(f"知识库 {knowledge_db_id} 的嵌入模型不存在")
+                return False
+            
+            model = model_info[0]
+            model_path = model['local_path']
+            
+            if not os.path.exists(model_path):
+                logger.error(f"嵌入模型文件不存在: {model_path}")
+                return False
+            
+            # 4. 加载嵌入模型并生成向量
+            embedding_model = SentenceTransformer(model_path)
+            
+            chunk_ids = [chunk['id'] for chunk in chunks]
+            contents = [chunk['content'] for chunk in chunks]
+            
+            # 批量生成向量
+            vectors = embedding_model.encode(contents, show_progress_bar=False)
+            logger.info(f"为知识库 {knowledge_db_id} 生成了 {len(vectors)} 个向量")
+            
+            # 5. 创建新的FAISS索引
+            if self.index_type == "Flat":
+                index = faiss.IndexFlatL2(self.vector_dimension)
+            else:
+                # 默认使用Flat
+                index = faiss.IndexFlatL2(self.vector_dimension)
+            
+            # 添加向量
+            vectors_array = np.array(vectors).astype('float32')
+            index.add(vectors_array)
+            
+            # 6. 创建新的ID映射
+            id_mapping = {}
+            for i, chunk_id in enumerate(chunk_ids):
+                id_mapping[str(i)] = chunk_id
+            
+            # 7. 保存索引和映射
+            faiss.write_index(index, index_path)
             with open(mapping_path, 'w') as f:
-                json.dump(new_id_mapping, f)
-
-            logger.info(f"已从知识库 {knowledge_db_id} 的索引中删除 {len(vector_ids_to_delete)} 个向量")
+                json.dump(id_mapping, f)
+            
+            logger.info(f"成功重建知识库 {knowledge_db_id} 的索引: {index.ntotal} 个向量, {len(id_mapping)} 个映射")
             return True
+            
         except Exception as e:
-            logger.error(f"删除向量时出错: {str(e)}", exc_info=True)
+            logger.error(f"重建知识库 {knowledge_db_id} 索引失败: {str(e)}", exc_info=True)
             return False

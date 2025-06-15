@@ -3,6 +3,9 @@ import Cookies from "js-cookie";
 import { ElMessage } from "element-plus";
 import router from "@/router";
 
+// 全局轮询清理器
+window.globalPollingCleanup = window.globalPollingCleanup || [];
+
 const instance = axios.create({
   baseURL: process.env.VUE_APP_API_BASE_URL, // 动态加载 API 前缀
   timeout: 30000,
@@ -39,6 +42,15 @@ instance.interceptors.response.use(
           ElMessage.error("登录状态已过期，请重新登录");
           // 清除token
           Cookies.remove("token");
+          // 清理所有全局轮询
+          if (window.globalPollingCleanup) {
+            window.globalPollingCleanup.forEach(cleanup => {
+              if (typeof cleanup === 'function') {
+                cleanup();
+              }
+            });
+            window.globalPollingCleanup = [];
+          }
           // 跳转到登录页
           router.push({
             name: "Login",
